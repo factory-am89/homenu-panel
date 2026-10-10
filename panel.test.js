@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { contar, esc, filaIssue, filas, tabla } from "./lib.mjs";
+import { contar, diaDe, esc, filaIssue, filas, tabla, validarInforme } from "./lib.mjs";
+
+const informe = {
+  cobertura: { sesiones: 3 }, eventos: { total: 2, por_evento: { bloqueo_guardia: { total: 2, nombres: { stash: 2 } } } },
+  sinIssue: { minutos: 90.5, coste_usd: 12.3, tokens: { total: 1000 }, agentes: { revisor: 4 } },
+};
+test("validarInforme acepta un informe de fabrica y rechaza lo demás", () => {
+  assert.equal(validarInforme(informe).ok, true);
+  assert.equal(validarInforme(null).ok, false);
+  assert.equal(validarInforme([]).ok, false);
+  assert.match(validarInforme({ ...informe, sinIssue: { minutos: "9" } }).error, /sinIssue/);
+  assert.match(validarInforme({ ...informe, cobertura: {} }).error, /cobertura/);
+});
+test("diaDe da el día de Madrid, no el de UTC", () => {
+  assert.equal(diaDe(new Date("2026-10-10T22:30:00Z")), "2026-10-11"); // 00:30 en Madrid
+});
 
 test("esc escapa el HTML que llega de fuera", () => {
   assert.equal(esc(`<b a="1">&'`), "&lt;b a=&quot;1&quot;&gt;&amp;&#39;");

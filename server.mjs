@@ -1,10 +1,30 @@
 // Panel de la factoría, versión 0: lee de GitHub los ficheros que dice config/<proyecto>.json
 // y los enseña. Sin claves (repos públicos), sin dependencias, sin base de datos todavía.
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { contar, esc, filaIssue, filas, pagina, tabla } from "./lib.mjs";
+import { contar, diaDe, esc, filaIssue, filas, pagina, tabla, validarInforme } from "./lib.mjs";
+
+// Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
+const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
+const CARPETA_FABRICA = join(DATOS, "fabrica");
+const MAX_BYTES = 200_000;
+
+export function guardarInforme(informe, dia = diaDe()) {
+  mkdirSync(CARPETA_FABRICA, { recursive: true });
+  const destino = join(CARPETA_FABRICA, `${dia}.json`);
+  writeFileSync(`${destino}.tmp`, JSON.stringify({ recibido: new Date().toISOString(), informe }));
+  renameSync(`${destino}.tmp`, destino); // escritura atómica: nunca queda un fichero a medias
+  return dia;
+}
+
+function leerInformes() {
+  try {
+    return readdirSync(CARPETA_FABRICA).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse()
+      .map((f) => ({ dia: f.slice(0, 10), ...JSON.parse(readFileSync(join(CARPETA_FABRICA, f), "utf8")) }));
+  } catch { return []; } // sin carpeta todavía: aún no ha llegado ninguno
+}
 
 const config = JSON.parse(readFileSync(new URL(`./config/${process.env.PROYECTO ?? "menuplan"}.json`, import.meta.url), "utf8"));
 const CACHE_MS = 5 * 60_000;
@@ -50,6 +70,19 @@ async function leerIssues() {
 }
 
 const vistas = {
+  "/coste": async () => {
+    const lista = leerInformes();
+    if (!lista.length) return ["Coste y tiempo", `<p>Aún no ha llegado ningún informe. Se envía desde el PC con <code>cliente/enviar-fabrica.mjs</code>.</p>`, null];
+    const u = lista[0].informe, s = u.sinIssue;
+    const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
+    const dia = tabla(lista.map((x) => ({ dia: x.dia, sesiones: x.informe.cobertura.sesiones, horas: num(x.informe.sinIssue.minutos / 60),
+      tokens_millones: num(x.informe.sinIssue.tokens.total / 1e6), coste_usd_estimado: num(x.informe.sinIssue.coste_usd) })),
+    ["dia", "sesiones", "horas", "tokens_millones", "coste_usd_estimado"]);
+    const bloqueos = Object.entries(u.eventos.por_evento.bloqueo_guardia?.nombres ?? {}).sort((a, b) => b[1] - a[1]).map(([motivo, veces]) => ({ motivo, veces }));
+    const agentes = Object.entries(s.agentes ?? {}).sort((a, b) => b[1] - a[1]).map(([agente, lanzamientos]) => ({ agente, lanzamientos }));
+    const aviso = `<p class="aviso">El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Sesiones sin encargo asignado: aún no se reparte por encargo (necesita leer los issues desde el PC, MenuPlan#424).</p>`;
+    return ["Coste y tiempo", `${aviso}<h2>Por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
+  },
   "/issues": async () => {
     const d = await leerIssues();
     const cuenta = contar(d.lista, "tipo", "estado");
@@ -72,6 +105,23 @@ const vistas = {
 
 export const servidor = createServer(async (req, res) => {
   const ruta = new URL(req.url, "http://x").pathname;
+  if (req.method === "POST" && ruta === "/ingest/fabrica") {
+    // Solo llega por la red privada (el puerto va atado a la IP de Tailscale). Aun así se valida la forma y el tamaño.
+    let cuerpo = "", demasiado = false;
+    req.on("data", (c) => { cuerpo += c; if (cuerpo.length > MAX_BYTES) { demasiado = true; req.destroy(); } });
+    req.on("end", () => {
+      if (demasiado) return;
+      try {
+        const informe = JSON.parse(cuerpo);
+        const v = validarInforme(informe);
+        if (!v.ok) { res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(v)); return; }
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, dia: guardarInforme(informe) }));
+      } catch (e) {
+        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" }));
+      }
+    });
+    return;
+  }
   try {
     let titulo, cuerpo, d;
     if (ruta === "/") {

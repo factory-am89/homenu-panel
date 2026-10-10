@@ -37,6 +37,25 @@ export function contar(lista, a, b) {
   return r;
 }
 
+const esNum = (v) => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * ¿Es un informe de `npm run fabrica -- --json`? Solo se acepta la forma que el panel sabe pintar:
+ * agregados numéricos. Lo demás se rechaza con el motivo (nunca se guarda tal cual lo que llega).
+ */
+export function validarInforme(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return { ok: false, error: "no es un objeto" };
+  if (!x.cobertura || !esNum(x.cobertura.sesiones)) return { ok: false, error: "falta cobertura.sesiones" };
+  if (!x.eventos || !esNum(x.eventos.total) || typeof x.eventos.por_evento !== "object") return { ok: false, error: "falta eventos" };
+  const s = x.sinIssue;
+  if (!s || !esNum(s.minutos) || !esNum(s.coste_usd) || !s.tokens || !esNum(s.tokens.total)) return { ok: false, error: "falta sinIssue (minutos, coste_usd, tokens)" };
+  return { ok: true };
+}
+
+/** Del informe, lo que se guarda: el propio informe más el día (Madrid) al que pertenece. */
+export const diaDe = (fecha = new Date()) =>
+  new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Madrid" }).format(fecha);
+
 export function pagina(titulo, proyecto, cuerpo) {
   return `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)} · Panel</title>
@@ -44,6 +63,6 @@ export function pagina(titulo, proyecto, cuerpo) {
 @media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
 nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
 .aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/issues">Issues</a></nav>
+<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
 <h1>${esc(titulo)}</h1>${cuerpo}</html>`;
 }
