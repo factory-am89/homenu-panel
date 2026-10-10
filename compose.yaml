@@ -1,0 +1,11 @@
+# Panel en el servidor HoMenu-Panel. Docker se salta ufw: el puerto va atado a la IP de Tailscale.
+services:
+  panel:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "100.73.252.32:8080:8080"
+    mem_limit: 128m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
