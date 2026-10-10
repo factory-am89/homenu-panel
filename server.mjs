@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { contar, diaDe, esc, filaIssue, filas, pagina, tabla, validarInforme } from "./lib.mjs";
+import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, pagina, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
@@ -69,7 +69,69 @@ async function leerIssues() {
   return issues;
 }
 
+// Texto de un fichero del repo (raw no cuenta contra el límite de la API). Caché de 15 min, y con datos viejos si GitHub falla.
+const textos = new Map();
+async function texto(ruta) {
+  const hit = textos.get(ruta);
+  if (hit && Date.now() - hit.t < CACHE_ISSUES_MS) return hit.txt;
+  try {
+    const r = await fetch(`https://raw.githubusercontent.com/${config.repo}/${config.rama}/${ruta}`, { signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw new Error(`${ruta}: GitHub contesta ${r.status}`);
+    const txt = await r.text();
+    textos.set(ruta, { t: Date.now(), txt });
+    return txt;
+  } catch (e) {
+    if (hit) return hit.txt;
+    throw e;
+  }
+}
+
+const listados = new Map();
+async function listar(dir) {
+  const hit = listados.get(dir);
+  if (hit && Date.now() - hit.t < CACHE_ISSUES_MS) return hit.lista;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${config.repo}/contents/${dir}?ref=${config.rama}`,
+      { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw new Error(`${dir}: GitHub contesta ${r.status}`);
+    const lista = await r.json();
+    listados.set(dir, { t: Date.now(), lista });
+    return lista;
+  } catch (e) {
+    if (hit) return hit.lista;
+    throw e;
+  }
+}
+
 const vistas = {
+  "/agentes": async () => {
+    const dir = config.directorios.agentes;
+    const ficheros = (await listar(dir)).filter((f) => f.type === "file" && f.name.endsWith(".md"));
+    const fichas = await Promise.all(ficheros.map(async (f) => {
+      const txt = await texto(`${dir}/${f.name}`);
+      const fm = frontmatter(txt);
+      return { agente: fm.name ?? f.name, tipo: /^Tipo:\s*(.+)$/m.exec(txt)?.[1] ?? "", planos: /^Planos:\s*(.+)$/m.exec(txt)?.[1] ?? "", herramientas: fm.tools ?? "", modelo: fm.model ?? "", para_que: fm.description ?? "" };
+    }));
+    fichas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.agente.localeCompare(b.agente));
+    return ["Agentes", tabla(fichas, ["agente", "tipo", "planos", "herramientas", "modelo", "para_que"]), { t: Date.now() }];
+  },
+  "/skills": async () => {
+    const dir = config.directorios.skills;
+    const carpetas = (await listar(dir)).filter((f) => f.type === "dir");
+    const fichas = await Promise.all(carpetas.map(async (c) => {
+      const fm = frontmatter(await texto(`${dir}/${c.name}/SKILL.md`));
+      const cad = caducidad(fm.comprobado);
+      return { skill: fm.name ?? c.name, tipo: fm.tipo ?? "", dueno: fm.dueno ?? "", comprobado: fm.comprobado ?? "", caduca: cad.caduca, dias_para_caducar: cad.dias, para_que: fm.description ?? "" };
+    }));
+    fichas.sort((a, b) => Number(a.dias_para_caducar) - Number(b.dias_para_caducar));
+    return ["Skills (las que antes caducan, primero)", tabla(fichas, ["skill", "tipo", "dueno", "comprobado", "caduca", "dias_para_caducar", "para_que"]), { t: Date.now() }];
+  },
+  "/encargos": async () => {
+    const o = config.orquestar;
+    const filasPipe = tablaMarkdown(await texto(o.fichero), o.encabezado);
+    const aviso = `<p class="aviso">Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code>. Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>). Como es texto de una orden y no un fichero de datos, si cambia de forma esta pantalla se queda vacía.</p>`;
+    return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasPipe, Object.keys(filasPipe[0] ?? { Acción: 1, Pipeline: 1 }))}`, { t: Date.now() }];
+  },
   "/coste": async () => {
     const lista = leerInformes();
     if (!lista.length) return ["Coste y tiempo", `<p>Aún no ha llegado ningún informe. Se envía desde el PC con <code>cliente/enviar-fabrica.mjs</code>.</p>`, null];

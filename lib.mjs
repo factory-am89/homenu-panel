@@ -37,6 +37,50 @@ export function contar(lista, a, b) {
   return r;
 }
 
+const sinComillas = (v) => v.trim().replace(/^(["'])(.*)\1$/, "$2");
+
+/** Cabecera `---` de un .md: claves de primer nivel y, de `metadata:`, sus claves con un nivel de sangría. */
+export function frontmatter(texto) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto ?? "");
+  const r = {};
+  if (!m) return r;
+  let bloque = null;
+  for (const linea of m[1].split(/\r?\n/)) {
+    const sub = /^\s+([\w-]+):\s*(.*)$/.exec(linea);
+    if (sub && bloque) { r[sub[1]] = sinComillas(sub[2]); continue; }
+    const k = /^([\w-]+):\s*(.*)$/.exec(linea);
+    if (!k) continue;
+    if (k[2] === "") bloque = k[1];
+    else { bloque = null; r[k[1]] = sinComillas(k[2]); }
+  }
+  return r;
+}
+
+/** Filas de la primera tabla markdown que sigue a un encabezado (`## …texto…`). */
+export function tablaMarkdown(texto, encabezado) {
+  const lineas = (texto ?? "").split(/\r?\n/);
+  const i = lineas.findIndex((l) => /^#{1,6}\s/.test(l) && l.includes(encabezado));
+  if (i < 0) return [];
+  const celdas = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  const ini = lineas.findIndex((l, j) => j > i && l.trim().startsWith("|"));
+  if (ini < 0) return [];
+  const cab = celdas(lineas[ini]);
+  const filas = [];
+  for (let j = ini + 2; j < lineas.length && lineas[j].trim().startsWith("|"); j++) {
+    const c = celdas(lineas[j]);
+    filas.push(Object.fromEntries(cab.map((h, k) => [h, c[k] ?? ""])));
+  }
+  return filas;
+}
+
+/** Caducidad de una skill: 90 días desde `comprobado` (AAAA-MM-DD). Devuelve { caduca, dias } o vacío. */
+export function caducidad(comprobado, hoy = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(comprobado ?? "")) return { caduca: "", dias: "" };
+  const c = new Date(`${comprobado}T00:00:00Z`);
+  const caduca = new Date(c.getTime() + 90 * 86_400_000);
+  return { caduca: caduca.toISOString().slice(0, 10), dias: Math.ceil((caduca - hoy) / 86_400_000) };
+}
+
 const esNum = (v) => typeof v === "number" && Number.isFinite(v);
 
 /**
@@ -63,6 +107,6 @@ export function pagina(titulo, proyecto, cuerpo) {
 @media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
 nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
 .aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
+<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
 <h1>${esc(titulo)}</h1>${cuerpo}</html>`;
 }

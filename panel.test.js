@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { contar, diaDe, esc, filaIssue, filas, tabla, validarInforme } from "./lib.mjs";
+import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
+
+test("frontmatter lee claves, comillas y el bloque metadata", () => {
+  const f = frontmatter('---\nname: hetzner\ndescription: Úsala al: tocar\nmetadata:\n  tipo: servicio\n  comprobado: "2026-10-09"\n---\n# x');
+  assert.deepEqual([f.name, f.description, f.tipo, f.comprobado], ["hetzner", "Úsala al: tocar", "servicio", "2026-10-09"]);
+  assert.deepEqual(frontmatter("sin cabecera"), {});
+});
+test("tablaMarkdown saca las filas de la tabla tras el encabezado", () => {
+  const md = "## 2. Otro\n| a | b |\n|---|---|\n| no | no |\n\n## 3. Qué pipeline\n\ntexto\n\n| Acción | Pipeline |\n|---|---|\n| Bug | `revisor` → `datos` |\n| CI | `gobierno` |\n\nfin";
+  assert.deepEqual(tablaMarkdown(md, "Qué pipeline"), [{ "Acción": "Bug", Pipeline: "`revisor` → `datos`" }, { "Acción": "CI", Pipeline: "`gobierno`" }]);
+  assert.deepEqual(tablaMarkdown(md, "No existe"), []);
+});
+test("caducidad: 90 días desde la comprobación", () => {
+  assert.deepEqual(caducidad("2026-10-09", new Date("2026-10-10T00:00:00Z")), { caduca: "2027-01-07", dias: 89 });
+  assert.deepEqual(caducidad("", new Date()), { caduca: "", dias: "" });
+});
 
 const informe = {
   cobertura: { sesiones: 3 }, eventos: { total: 2, por_evento: { bloqueo_guardia: { total: 2, nombres: { stash: 2 } } } },

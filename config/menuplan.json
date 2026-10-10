@@ -2,6 +2,8 @@
   "nombre": "MenuPlan",
   "repo": "pabloam89/MenuPlan",
   "rama": "staging",
+  "directorios": { "agentes": ".claude/agents", "skills": ".claude/skills" },
+  "orquestar": { "fichero": ".claude/commands/orquestar.md", "encabezado": "Qué pipeline según la acción" },
   "fuentes": {
     "glosario": { "fichero": "ops/glosario.json", "lista": "terminos" },
     "estandares": { "fichero": "ops/estandares-agentes.json", "lista": "agentes" }
