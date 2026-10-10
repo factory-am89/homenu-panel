@@ -142,8 +142,20 @@ const vistas = {
     ["dia", "sesiones", "horas", "tokens_millones", "coste_usd_estimado"]);
     const bloqueos = Object.entries(u.eventos.por_evento.bloqueo_guardia?.nombres ?? {}).sort((a, b) => b[1] - a[1]).map(([motivo, veces]) => ({ motivo, veces }));
     const agentes = Object.entries(s.agentes ?? {}).sort((a, b) => b[1] - a[1]).map(([agente, lanzamientos]) => ({ agente, lanzamientos }));
-    const aviso = `<p class="aviso">El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Sesiones sin encargo asignado: aún no se reparte por encargo (necesita leer los issues desde el PC, MenuPlan#424).</p>`;
-    return ["Coste y tiempo", `${aviso}<h2>Por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
+    const titulos = new Map();
+    try { for (const x of (await leerIssues()).lista) titulos.set(x.n, x.titulo); } catch { /* sin títulos, solo números */ }
+    const encargos = (u.encargos ?? []).slice().sort((a, b) => b.coste_usd - a.coste_usd).map((e) => ({
+      issue: `#${e.issue}`, titulo: titulos.get(e.issue) ?? "", fondo: e.fondo ? `#${e.fondo}` : "", horas: num(e.minutos / 60),
+      tokens_millones: num(e.tokens.total / 1e6), coste_usd_estimado: num(e.coste_usd), sesiones: e.sesiones, rondas: e.rondas ?? "", aguanto: e.aguanto ?? "",
+    }));
+    const procedencia = u.datos_github === "fresco" ? "datos de GitHub al día"
+      : u.datos_github?.startsWith("cache") ? `ATENCIÓN: los datos de GitHub vienen de una caché (${esc(u.datos_github)})`
+        : u.datos_github === "sin-github" ? "enviado sin unir con los issues" : "";
+    const aviso = `<p class="aviso">El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Encargos medidos: ${u.cobertura.encargos_medidos ?? 0}${procedencia ? ` · ${procedencia}` : ""}.</p>`;
+    const porEncargo = encargos.length
+      ? `<h2>Por encargo (mayor coste primero)</h2>${tabla(encargos, ["issue", "titulo", "fondo", "horas", "tokens_millones", "coste_usd_estimado", "sesiones", "rondas", "aguanto"])}`
+      : `<h2>Por encargo</h2><p>Este informe no trae encargos medidos.</p>`;
+    return ["Coste y tiempo", `${aviso}${porEncargo}<h2>Total por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
   },
   "/issues": async () => {
     const d = await leerIssues();

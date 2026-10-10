@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Corre en el PC de Pablo: mide con `npm run fabrica` de MenuPlan y envía el informe al panel por la red privada.
 //
-//   node cliente/enviar-fabrica.mjs --menuplan C:\dev\MenuPlan [--url http://100.73.252.32:8080] [--con-github] [--solo-si-cambia]
+//   node cliente/enviar-fabrica.mjs --menuplan C:\dev\MenuPlan-panel-lectura [--url http://100.73.252.32:8080]
+//        [--solo-si-cambia] [--actualizar] [--sin-github]
 //
-// El informe son agregados numéricos (el propio fabrica dice: ni mensajes, ni prompts, ni rutas). Por defecto va con
-// --sin-github: la unión con los issues choca con el límite de GitHub (MenuPlan#424). Sale 0 si el panel lo guardó.
+// El informe son agregados numéricos (el propio fabrica dice: ni mensajes, ni prompts, ni rutas). Une las sesiones con
+// los issues (coste y tiempo por encargo); desde MenuPlan#532 esa consulta es ligera. --sin-github solo mide sesiones.
+// --menuplan es un clon de staging solo para esto (no la carpeta de trabajo, que va por detrás y con cambios).
+// Sale 0 si el panel lo guardó.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -32,7 +35,13 @@ if (process.argv.includes("--solo-si-cambia")) {
   globalThis.__ultima = ultima;
 }
 
-const opciones = ["--json", ...(process.argv.includes("--con-github") ? [] : ["--sin-github"])];
+// Si --menuplan es una copia de solo lectura para el panel (clon de staging), se pone al día antes de medir.
+if (process.argv.includes("--actualizar")) {
+  try { execFileSync("git", ["-C", menuplan, "pull", "--ff-only", "-q"], { stdio: "ignore", timeout: 60_000 }); }
+  catch { console.error("enviar-fabrica aviso: no pude actualizar la copia de MenuPlan; se mide con la que hay"); }
+}
+
+const opciones = ["--json", ...(process.argv.includes("--sin-github") ? ["--sin-github"] : [])];
 const salida = execFileSync(process.execPath, [join(menuplan, "scripts", "fabrica.mjs"), ...opciones], {
   cwd: menuplan, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
 });
