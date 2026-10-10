@@ -1,0 +1,9 @@
+{
+  "nombre": "MenuPlan",
+  "repo": "pabloam89/MenuPlan",
+  "rama": "staging",
+  "fuentes": {
+    "glosario": { "fichero": "ops/glosario.json", "lista": "terminos" },
+    "estandares": { "fichero": "ops/estandares-agentes.json", "lista": "agentes" }
+  }
+}
