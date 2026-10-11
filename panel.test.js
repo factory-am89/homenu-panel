@@ -130,3 +130,9 @@ test("bibliotecaDiseno: barra con documentos e índice del abierto; un id descon
   assert.equal(bibliotecaDiseno(docs, "nada", "").existe, false);
   assert.equal(bibliotecaDiseno(docs).existe, true);
 });
+
+import { readFileSync as leerFichero, readdirSync as listarDir } from "node:fs";
+test("el Dockerfile copia todos los .mjs de la raíz (si falta uno, el contenedor se cae al arrancar)", () => {
+  const dockerfile = leerFichero(new URL("./Dockerfile", import.meta.url), "utf8");
+  for (const f of listarDir(new URL("./", import.meta.url)).filter((x) => x.endsWith(".mjs"))) assert.ok(dockerfile.includes(f), `${f} no está en el Dockerfile`);
+});
