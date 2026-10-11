@@ -60,3 +60,21 @@ test("contar agrupa por dos claves", () => {
   const r = contar([{ tipo: "caso", estado: "abierto" }, { tipo: "caso", estado: "abierto" }, { tipo: "", estado: "cerrado" }], "tipo", "estado");
   assert.deepEqual(r, { caso: { abierto: 2 }, "(sin)": { cerrado: 1 } });
 });
+
+import { pasosTexto, porFondo } from "./lib.mjs";
+test("pasosTexto une pasos, paralelos, opcionales y cierre", () => {
+  const t = { pasos: [{ agentes: ["lola"] }, { agentes: ["evaluador", "revisor"] }, { opcional: [{ agente: "seguridad", si: "escribe datos" }] }], cierra_con: "OK" };
+  assert.equal(pasosTexto(t), "lola → evaluador + revisor → [seguridad si escribe datos] → OK");
+});
+test("porFondo cuenta encargos y casos de cada fondo y suma lo medido", () => {
+  const is = [
+    { n: 10, tipo: "fondo", titulo: "F", estado: "abierto", causa: "x", fondo: "" },
+    { n: 11, tipo: "encargo", estado: "abierto", fondo: "10" },
+    { n: 12, tipo: "encargo", estado: "cerrado", fondo: "10" },
+    { n: 13, tipo: "caso", estado: "cerrado", fondo: "10" },
+    { n: 14, tipo: "encargo", estado: "abierto", fondo: "99" },
+  ];
+  const r = porFondo(is, [{ issue: 12, minutos: 90, coste_usd: 3 }, { issue: 14, minutos: 60, coste_usd: 9 }]);
+  assert.equal(r.length, 1);
+  assert.deepEqual([r[0].encargos, r[0].encargos_abiertos, r[0].casos, r[0].medidos, r[0].horas, r[0].coste_usd], [2, 1, 1, 1, 1.5, 3]);
+});

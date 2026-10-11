@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, pagina, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
+import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, pagina, pasosTexto, porFondo, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
@@ -127,10 +127,36 @@ const vistas = {
     return ["Skills (las que antes caducan, primero)", tabla(fichas, ["skill", "tipo", "dueno", "comprobado", "caduca", "dias_para_caducar", "para_que"]), { t: Date.now() }];
   },
   "/encargos": async () => {
+    // Desde MenuPlan#557 los tipos son un fichero de datos; si aún no está en la rama, se cae a la tabla de orquestar.md.
+    let tipos = null;
+    try { tipos = JSON.parse(await texto(config.tiposDeEncargo.fichero)).tipos; } catch { /* sin fichero de datos: se usa la tabla */ }
+    if (tipos) {
+      let tareas = new Map();
+      try { tareas = new Map(filas((await leer("estandares")).json[config.fuentes.estandares.lista]).map((a) => [a.id, (a.tareas ?? []).length])); } catch { /* sin estándares: sin cifras */ }
+      const filasTipos = tipos.map((t) => {
+        const agentes = [...new Set(t.pasos.flatMap((p) => [...(p.agentes ?? []), ...(p.opcional ?? []).map((o) => o.agente)]))];
+        return { tipo: t.accion, pipeline: pasosTexto(t), estandares: agentes.filter((x) => tareas.has(x)).map((x) => `${x}: ${tareas.get(x)}`).join(", ") };
+      });
+      const aviso = `<p class="aviso">Sale de <code>${esc(config.tiposDeEncargo.fichero)}</code>. En «estándares», cuántas tareas con estándar tiene cada agente del pipeline. Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).</p>`;
+      return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasTipos, ["tipo", "pipeline", "estandares"])}`, { t: Date.now() }];
+    }
     const o = config.orquestar;
     const filasPipe = tablaMarkdown(await texto(o.fichero), o.encabezado);
-    const aviso = `<p class="aviso">Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code>. Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>). Como es texto de una orden y no un fichero de datos, si cambia de forma esta pantalla se queda vacía.</p>`;
+    const aviso = `<p class="aviso">Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code> (aún no hay fichero de datos). Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).</p>`;
     return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasPipe, Object.keys(filasPipe[0] ?? { Acción: 1, Pipeline: 1 }))}`, { t: Date.now() }];
+  },
+  "/fondos": async () => {
+    const d = await leerIssues();
+    const lista = leerInformes();
+    const medidos = lista[0]?.informe.encargos ?? [];
+    const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
+    const f = porFondo(d.lista, medidos).map((x) => ({
+      fondo: `#${x.n}`, titulo: x.titulo, estado: x.estado, causa: x.causa, encargos: `${x.encargos - x.encargos_abiertos}/${x.encargos} cerrados`,
+      casos: x.casos, medidos: x.medidos, horas: x.medidos ? num(x.horas) : "", coste_usd_estimado: x.medidos ? num(x.coste_usd) : "",
+    }));
+    const aviso = d.error ? `<p class="aviso">Datos viejos: ${esc(d.error)}</p>` : "";
+    const nota = `<p class="aviso">Cada fondo con los encargos y casos que cuelgan de él (bloque <code>fondo:</code>). Horas y coste solo de los encargos medidos en el último informe de fabrica; mayor coste primero.</p>`;
+    return ["Fondos y sus encargos", `${aviso}${nota}${tabla(f, ["fondo", "titulo", "estado", "causa", "encargos", "casos", "medidos", "horas", "coste_usd_estimado"])}`, d];
   },
   "/coste": async () => {
     const lista = leerInformes();

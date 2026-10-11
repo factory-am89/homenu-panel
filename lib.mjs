@@ -107,6 +107,35 @@ export function pagina(titulo, proyecto, cuerpo) {
 @media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
 nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
 .aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
+<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
 <h1>${esc(titulo)}</h1>${cuerpo}</html>`;
+}
+
+// "diseno → qa + revisor": los pasos de un tipo de encargo (ops/tipos-de-encargo.json) en una línea.
+export function pasosTexto(tipo) {
+  return (tipo.pasos ?? []).map((p) => {
+    const ag = (p.agentes ?? []).join(" + ");
+    const op = (p.opcional ?? []).map((o) => `[${o.agente} si ${o.si}]`).join(" ");
+    return [ag, op].filter(Boolean).join(" ") + (p.nota ? ` (${p.nota})` : "");
+  }).join(" → ") + (tipo.cierra_con ? ` → ${tipo.cierra_con}` : "");
+}
+
+// Cruza los fondos con sus encargos y casos (issues) y con lo medido por encargo (informe de fabrica).
+// medidos: [{issue, minutos, coste_usd}]. Devuelve una fila por fondo, el de más coste primero.
+export function porFondo(issues, medidos = []) {
+  const m = new Map(medidos.map((e) => [e.issue, e]));
+  const fondos = issues.filter((x) => x.tipo === "fondo");
+  return fondos.map((f) => {
+    const hijos = issues.filter((x) => x.fondo === String(f.n) && x.n !== f.n);
+    const encargos = hijos.filter((x) => x.tipo === "encargo");
+    const casos = hijos.filter((x) => x.tipo === "caso");
+    const medidosDelFondo = encargos.map((x) => m.get(x.n)).filter(Boolean);
+    return {
+      n: f.n, titulo: f.titulo, estado: f.estado, causa: f.causa,
+      encargos: encargos.length, encargos_abiertos: encargos.filter((x) => x.estado === "abierto").length,
+      casos: casos.length, medidos: medidosDelFondo.length,
+      horas: medidosDelFondo.reduce((s, e) => s + e.minutos, 0) / 60,
+      coste_usd: medidosDelFondo.reduce((s, e) => s + e.coste_usd, 0),
+    };
+  }).sort((a, b) => b.coste_usd - a.coste_usd || b.encargos - a.encargos);
 }
