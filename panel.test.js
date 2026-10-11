@@ -101,3 +101,32 @@ test("entidadesVista: barra lateral con todas por eje, escapa HTML y rechaza un 
   assert.equal(entidadesVista(ents, "nada").existe, false);
   assert.match(entidadesVista(ents).html, /3 entidades y 1 relaciones/);
 });
+
+import { markdownAHtml, bibliotecaDiseno, ancla } from "./markdown.mjs";
+const NL = String.fromCharCode(10);
+const md = (...l) => l.join(NL);
+
+test("markdownAHtml: títulos con ancla, tablas, listas y escape de HTML", () => {
+  const r = markdownAHtml(md("## Qué es", "", "| a | b |", "|---|---|", "| **x** | <script> |", "", "- uno", "- `dos`"));
+  assert.match(r.html, /<h2 id="que-es">/);
+  assert.match(r.html, /<th>a<[/]th>/);
+  assert.match(r.html, /<strong>x<[/]strong>/);
+  assert.ok(!r.html.includes("<script>"));
+  assert.match(r.html, /<li><code>dos<[/]code><[/]li>/);
+  assert.deepEqual(r.titulos.map((t) => t.id), ["que-es"]);
+  assert.equal(ancla("Áé Ñ"), "ae-n");
+});
+
+test("markdownAHtml: un enlace javascript: no se convierte en enlace y los títulos repetidos no chocan", () => {
+  const r = markdownAHtml(md("## A", "", "## A", "", "[x](javascript:alert(1))"));
+  assert.ok(!r.html.includes("<a "));
+  assert.deepEqual(r.titulos.map((t) => t.id), ["a", "a-2"]);
+});
+
+test("bibliotecaDiseno: barra con documentos e índice del abierto; un id desconocido no existe", () => {
+  const docs = [{ id: "meta", titulo: "Meta", fichero: "m.md" }, { id: "x", titulo: "X", fichero: "x.md" }];
+  const v = bibliotecaDiseno(docs, "meta", md("## Uno", "", "### Dos", ""));
+  assert.ok(v.html.includes('href="/diseno/x"') && v.html.includes('href="#uno"') && v.html.includes('href="#dos"'));
+  assert.equal(bibliotecaDiseno(docs, "nada", "").existe, false);
+  assert.equal(bibliotecaDiseno(docs).existe, true);
+});

@@ -25,5 +25,25 @@
   },
   "tiposDeEncargo": {
     "fichero": "ops/tipos-de-encargo.json"
-  }
+  },
+  "diseno": [
+    {
+      "id": "meta",
+      "titulo": "Meta-sistema de diseño (N0, N1, N2)",
+      "fichero": "docs/diseno/META-DISENO.md",
+      "para": "leyes, bloques y perfiles: la propuesta que decidimos en #591"
+    },
+    {
+      "id": "homenu",
+      "titulo": "Sistema de diseño de HoMenu",
+      "fichero": "DESIGN_SYSTEM.md",
+      "para": "los criterios de UI que rigen hoy"
+    },
+    {
+      "id": "estado",
+      "titulo": "Estado y plan del diseño",
+      "fichero": "docs/diseno/ESTADO.md",
+      "para": "qué está hecho, qué falta y en qué orden"
+    }
+  ]
 }

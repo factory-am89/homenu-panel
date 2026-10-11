@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bibliotecaDiseno } from "./markdown.mjs";
 import { caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, pagina, pasosTexto, porFondo, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
@@ -227,7 +228,7 @@ export const servidor = createServer(async (req, res) => {
     let titulo, cuerpo, d;
     if (ruta === "/") {
       titulo = "Inicio";
-      cuerpo = `<p>Lee <code>${esc(config.repo)}</code> (${esc(config.rama)}). Secciones: glosario, estándares de agentes e issues. Coste y tiempo vienen después.</p>`;
+      cuerpo = `<p>Lee <code>${esc(config.repo)}</code> (${esc(config.rama)}). Secciones: glosario, estándares, agentes, skills, tipos de encargo, fondos, entidades, diseño, issues y coste.</p>`;
     } else if (/^[/]entidades([/][a-z0-9-]+)?$/.test(ruta)) {
       let datos;
       try { datos = JSON.parse(await texto(config.fuentes.entidades.fichero)); }
@@ -239,6 +240,12 @@ export const servidor = createServer(async (req, res) => {
         [titulo, cuerpo] = [v.titulo, v.html];
         d = { t: Date.now() };
       }
+    } else if (/^[/]diseno([/][a-z0-9-]+)?$/.test(ruta)) {
+      const id = ruta.split("/")[2], doc = config.diseno.find((x) => x.id === id);
+      const v = bibliotecaDiseno(config.diseno, id, doc ? await texto(doc.fichero) : "");
+      if (!v.existe) { res.writeHead(404).end("No existe ese documento"); return; }
+      [titulo, cuerpo] = [v.titulo, v.html];
+      d = { t: Date.now() };
     } else if (vistas[ruta]) [titulo, cuerpo, d] = await vistas[ruta]();
     else { res.writeHead(404).end("No existe"); return; }
     if (d) cuerpo += `<p class="aviso">${d.actualizado ? `Fichero del ${esc(d.actualizado)}; ` : ""}leído ${new Date(d.t).toISOString()}</p>`;

@@ -107,7 +107,7 @@ export function pagina(titulo, proyecto, cuerpo) {
 @media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
 nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
 .aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/entidades">Entidades</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
+<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/entidades">Entidades</a><a href="/diseno">Diseño</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
 <h1>${esc(titulo)}</h1>${cuerpo}</html>`;
 }
 
