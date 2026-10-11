@@ -12,8 +12,7 @@
   },
   "fuentes": {
     "glosario": {
-      "fichero": "ops/glosario.json",
-      "lista": "terminos"
+      "directorio": "ops/glosario/terminos"
     },
     "estandares": {
       "fichero": "ops/estandares-agentes.json",

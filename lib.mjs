@@ -269,3 +269,19 @@ export function entidadesVista(datos, id) {
   }
   return { existe: true, titulo: id ? por.get(id).nombre : "Entidades", html: `<div class="inv"><aside class="lateral" aria-label="Entidades">${lateral}</aside><div class="inv-centro">${centro}</div></div>` };
 }
+
+// Desde MenuPlan#566 ops/entidades.json trae claves en inglés (entities, relations, axis, registry...).
+// El panel enseña los términos de siempre; esta función traduce el registro a la forma que lee entidadesVista.
+const EJE_ES = { bridge: "puente", horizontal: "horizontal", vertical: "vertical" };
+const REGISTRO_ES = { with_registry: "con_registro", partial: "parcial", without_registry: "sin_registro" };
+export function entidadesDeRegistro(r) {
+  if (Array.isArray(r?.entidades)) return r; // forma antigua, ya traducida
+  return {
+    entidades: (r?.entities ?? []).map((e) => ({
+      id: e.id, nombre: e.name, eje: EJE_ES[e.axis] ?? e.axis, registro: REGISTRO_ES[e.registry] ?? e.registry,
+      fuente_de_verdad: e.source_of_truth, formato_id: e.id_format, definicion: e.note ?? "", nota: "",
+      sinonimos_prohibidos: e.forbidden_synonyms ?? [],
+    })),
+    relaciones: (r?.relations ?? []).map((x) => ({ a: x.from, relacion: x.relation, b: x.to, campo: x.stored_in ?? x.stored_as })),
+  };
+}

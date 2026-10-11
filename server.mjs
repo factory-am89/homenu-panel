@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { entidadesDeRegistro } from "./lib.mjs";
 import { bibliotecaDiseno } from "./markdown.mjs";
 import { banner, caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
 
@@ -213,8 +214,12 @@ const vistas = {
     return ["Issues", `${aviso}${cifras}<h2>Resumen</h2>${resumen}<h2>Abiertos (${abiertos.length})</h2>${tabla(abiertos, ["n", "tipo", "area", "causa", "fondo", "asignado", "titulo"])}`, d];
   },
   "/glosario": async () => {
-    const d = await leer("glosario");
-    return ["Glosario", tabla(filas(d.json[config.fuentes.glosario.lista]), ["termino", "estado", "clase", "definicion", "sinonimos_prohibidos"]), d];
+    // Desde MenuPlan#469 cada término es un fichero de ops/glosario/terminos/.
+    const dir = config.fuentes.glosario.directorio;
+    const ficheros = (await listar(dir)).filter((f) => f.type === "file" && f.name.endsWith(".json"));
+    const terminos = (await Promise.all(ficheros.map(async (f) => { try { return JSON.parse(await texto(`${dir}/${f.name}`)); } catch { return null; } }))).filter(Boolean);
+    terminos.sort((a, b) => String(a.termino).localeCompare(String(b.termino), "es"));
+    return ["Glosario", tabla(terminos, ["termino", "estado", "clase", "definicion", "sinonimos_prohibidos"]), { t: Date.now() }];
   },
   "/estandares": async () => {
     const d = await leer("estandares");
@@ -250,7 +255,7 @@ export const servidor = createServer(async (req, res) => {
       cuerpo = portada(config.repo, config.rama);
     } else if (/^[/]entidades([/][a-z0-9-]+)?$/.test(ruta)) {
       let datos;
-      try { datos = JSON.parse(await texto(config.fuentes.entidades.fichero)); }
+      try { datos = entidadesDeRegistro(JSON.parse(await texto(config.fuentes.entidades.fichero))); }
       catch { datos = null; }
       if (!datos) { titulo = "Entidades"; cuerpo = banner("informacion", `Aún no hay <code>${esc(config.fuentes.entidades.fichero)}</code> en la rama ${esc(config.rama)}. Aparecerá cuando se fusione el mapa de entidades (MenuPlan#566).`); }
       else {

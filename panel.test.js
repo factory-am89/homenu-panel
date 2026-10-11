@@ -229,3 +229,14 @@ test("insignia, banner, tarjetas y tabla: texto además del color, escapado y n�
   assert.ok(t.includes('<td class="num">22</td>') && t.includes("i-exito") && !t.includes('<th scope="col" class="num">x'));
   assert.match(tabla([], ["a"]), /class="vacio"/);
 });
+
+import { entidadesDeRegistro } from "./lib.mjs";
+test("entidadesDeRegistro traduce el registro en inglés (MenuPlan#566) a lo que lee la vista", () => {
+  const r = entidadesDeRegistro({ entities: [{ id: "session", name: "Sesión", axis: "bridge", registry: "partial", source_of_truth: "x", id_format: "none", note: "n" }],
+    relations: [{ from: "session", relation: "works_in", to: "branch", stored_as: "field", stored_in: "rama" }] });
+  assert.equal(r.entidades[0].eje, "puente");
+  assert.equal(r.entidades[0].registro, "parcial");
+  assert.deepEqual(r.relaciones[0], { a: "session", relacion: "works_in", b: "branch", campo: "rama" });
+  assert.equal(entidadesDeRegistro({ entidades: [1], relaciones: [] }).entidades[0], 1); // la forma antigua pasa tal cual
+  assert.match(entidadesVista(r, "session").html, /Sesión/);
+});
