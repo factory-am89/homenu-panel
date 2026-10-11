@@ -109,7 +109,7 @@ const md = (...l) => l.join(NL);
 test("markdownAHtml: títulos con ancla, tablas, listas y escape de HTML", () => {
   const r = markdownAHtml(md("## Qué es", "", "| a | b |", "|---|---|", "| **x** | <script> |", "", "- uno", "- `dos`"));
   assert.match(r.html, /<h2 id="que-es">/);
-  assert.match(r.html, /<th>a<[/]th>/);
+  assert.match(r.html, /<th scope="col">a<[/]th>/);
   assert.match(r.html, /<strong>x<[/]strong>/);
   assert.ok(!r.html.includes("<script>"));
   assert.match(r.html, /<li><code>dos<[/]code><[/]li>/);
@@ -135,4 +135,97 @@ import { readFileSync as leerFichero, readdirSync as listarDir } from "node:fs";
 test("el Dockerfile copia todos los .mjs de la raíz (si falta uno, el contenedor se cae al arrancar)", () => {
   const dockerfile = leerFichero(new URL("./Dockerfile", import.meta.url), "utf8");
   for (const f of listarDir(new URL("./", import.meta.url)).filter((x) => x.endsWith(".mjs"))) assert.ok(dockerfile.includes(f), `${f} no está en el Dockerfile`);
+});
+
+// ---- Sistema de diseño (estilo.mjs): contraste, colores sueltos y estructura de la página ----
+import { CSS, PAREJAS, SIN_PAREJA, CLARO, OSCURO } from "./estilo.mjs";
+import { banner, insignia, pagina, portada, tarjetas, SECCIONES } from "./lib.mjs";
+
+// Los tokens de cada tema, leídos del CSS que se sirve (no de los objetos que lo generan).
+const temas = {};
+for (const m of CSS.matchAll(/[/][*] tema:([a-z-]+) [*][/][^{]*[{]([^}]*)[}]/g)) {
+  temas[m[1]] = Object.fromEntries([...m[2].matchAll(/--([a-z0-9-]+):([^;]+);/g)].map((x) => [x[1], x[2].trim()]));
+}
+const canal = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const luz = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * canal(n >> 16) + 0.7152 * canal((n >> 8) & 255) + 0.0722 * canal(n & 255); };
+const contraste = (a, b) => { const [x, y] = [luz(a), luz(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+
+test("contraste WCAG: cada pareja texto/fondo declarada llega a su mínimo en tema claro y oscuro", () => {
+  assert.deepEqual(Object.keys(temas).sort(), ["claro", "oscuro", "oscuro-sistema"]);
+  const fallos = [];
+  for (const tema of ["claro", "oscuro"]) {
+    for (const [fg, bg, minimo] of PAREJAS) {
+      const [a, b] = [temas[tema][fg], temas[tema][bg]];
+      assert.match(a ?? "", /^#[0-9a-f]{6}$/i, `${tema}: falta el token ${fg}`);
+      assert.match(b ?? "", /^#[0-9a-f]{6}$/i, `${tema}: falta el token ${bg}`);
+      const c = contraste(a, b);
+      if (c < minimo) fallos.push(`${tema}: ${fg} ${a} sobre ${bg} ${b} = ${c.toFixed(2)} (mínimo ${minimo})`);
+    }
+  }
+  assert.deepEqual(fallos, []);
+});
+
+test("temas: el oscuro del sistema y el forzado son el mismo, y los dos temas definen los mismos tokens", () => {
+  assert.deepEqual(temas["oscuro-sistema"], temas.oscuro);
+  const colores = (t) => Object.keys(t).filter((k) => !(k in temas.claro) || k in OSCURO);
+  assert.deepEqual(Object.keys(CLARO).sort(), Object.keys(OSCURO).sort());
+  assert.ok(colores(temas.claro).length > 10);
+});
+
+test("cada token de color está en alguna pareja de contraste (o es decorativo y está declarado)", () => {
+  const enPareja = new Set(PAREJAS.flat());
+  const sin = Object.keys(CLARO).filter((k) => !enPareja.has(k) && !SIN_PAREJA.includes(k));
+  assert.deepEqual(sin, []);
+});
+
+test("el CSS no tiene colores sueltos fuera de la sección de tokens", () => {
+  const ini = CSS.indexOf("/* tokens:inicio */"), fin = CSS.indexOf("/* tokens:fin */");
+  assert.ok(ini >= 0 && fin > ini, "faltan las marcas de la sección de tokens");
+  const fuera = CSS.slice(0, ini) + CSS.slice(fin + "/* tokens:fin */".length);
+  assert.ok(fuera.length > 1000);
+  assert.deepEqual(fuera.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [], []);
+  assert.deepEqual(fuera.match(/\b(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color-mix|color)\(/g) ?? [], []);
+  assert.deepEqual(fuera.match(/(?:color|background|border[a-z-]*|outline[a-z-]*)\s*:[^;}]*\b(?:white|black|red|blue|green|gray|grey|yellow|orange|purple|pink|brown)\b/g) ?? [], []);
+});
+
+test("todo var(--x) del CSS apunta a un token definido", () => {
+  const definidos = new Set(Object.keys(temas.claro));
+  const usados = new Set([...CSS.matchAll(/var[(]--([a-z0-9-]+)/g)].map((m) => m[1]));
+  assert.deepEqual([...usados].filter((u) => !definidos.has(u)), []);
+});
+
+test("ningún otro módulo mete estilos: ni <style> ni style= fuera de estilo.mjs", () => {
+  for (const f of ["server.mjs", "markdown.mjs"]) assert.ok(!/<style|style=/.test(leerFichero(new URL(`./${f}`, import.meta.url), "utf8")), f);
+  const lib = leerFichero(new URL("./lib.mjs", import.meta.url), "utf8");
+  assert.equal((lib.match(/<style/g) ?? []).length, 1);
+  assert.ok(!/style=/.test(lib));
+});
+
+test("pagina: idioma, saltar al contenido, un h1, navegación agrupada y elemento activo con aria-current", () => {
+  const h = pagina("Fondos", "Proyecto <x>", "<p>hola</p>", "/fondos");
+  assert.match(h, /<html lang="es">/);
+  assert.match(h, /<a class="salto" href="#contenido">Saltar al contenido<[/]a>/);
+  assert.equal((h.match(/<h1>/g) ?? []).length, 1);
+  assert.ok(h.includes("<title>Fondos · Proyecto &lt;x&gt;</title>"));
+  for (const g of ["Conocimiento", "Trabajo", "Mapa"]) assert.ok(h.includes(`>${g}<`), g);
+  assert.equal((h.match(/aria-current="page">/g) ?? []).length, 1);
+  assert.match(h, /<a href="[/]fondos" aria-current="page">Fondos<[/]a>/);
+  assert.match(pagina("Ficha", "P", "", "/entidades/evento"), /<a href="[/]entidades" aria-current="page">/);
+  assert.match(pagina("Inicio", "P", "", "/"), /class="marca" href="[/]" aria-current="page"/);
+});
+
+test("portada: una tarjeta con enlace y descripción por cada sección de la navegación", () => {
+  const h = portada("o/r", "staging");
+  for (const s of SECCIONES.flatMap((g) => g.items)) assert.ok(h.includes(`href="${s.href}"`) && h.includes(s.para.slice(0, 20)), s.href);
+});
+
+test("insignia, banner, tarjetas y tabla: texto además del color, escapado y números a la derecha", () => {
+  assert.match(insignia("abierto"), /i-informacion">abierto</);
+  assert.match(insignia("raro<"), /i-neutro">raro&lt;</);
+  assert.match(banner("error", "x"), /role="alert"[^>]*><p><strong>Error[.]/);
+  assert.ok(!tarjetas([{ etiqueta: "<b>", valor: 3 }]).includes("<b>"));
+  const t = tabla([{ n: 1, estado: "cerrado", x: "a" }, { n: 22, estado: "abierto", x: "b" }], ["n", "estado", "x"]);
+  assert.match(t, /<th scope="col" class="num">n<[/]th>/);
+  assert.ok(t.includes('<td class="num">22</td>') && t.includes("i-exito") && !t.includes('<th scope="col" class="num">x'));
+  assert.match(tabla([], ["a"]), /class="vacio"/);
 });

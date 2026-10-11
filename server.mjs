@@ -5,7 +5,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bibliotecaDiseno } from "./markdown.mjs";
-import { caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, pagina, pasosTexto, porFondo, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
+import { banner, caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
@@ -139,12 +139,12 @@ const vistas = {
         const agentes = [...new Set(t.pasos.flatMap((p) => [...(p.agentes ?? []), ...(p.opcional ?? []).map((o) => o.agente)]))];
         return { tipo: t.accion, pipeline: pasosTexto(t), estandares: agentes.filter((x) => tareas.has(x)).map((x) => `${x}: ${tareas.get(x)}`).join(", ") };
       });
-      const aviso = `<p class="aviso">Sale de <code>${esc(config.tiposDeEncargo.fichero)}</code>. En «estándares», cuántas tareas con estándar tiene cada agente del pipeline. Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).</p>`;
+      const aviso = nota(`Sale de <code>${esc(config.tiposDeEncargo.fichero)}</code>. En «estándares», cuántas tareas con estándar tiene cada agente del pipeline. Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).`);
       return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasTipos, ["tipo", "pipeline", "estandares"])}`, { t: Date.now() }];
     }
     const o = config.orquestar;
     const filasPipe = tablaMarkdown(await texto(o.fichero), o.encabezado);
-    const aviso = `<p class="aviso">Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code> (aún no hay fichero de datos). Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).</p>`;
+    const aviso = nota(`Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code> (aún no hay fichero de datos). Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).`);
     return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasPipe, Object.keys(filasPipe[0] ?? { Acción: 1, Pipeline: 1 }))}`, { t: Date.now() }];
   },
   "/fondos": async () => {
@@ -152,17 +152,25 @@ const vistas = {
     const lista = leerInformes();
     const medidos = lista[0]?.informe.encargos ?? [];
     const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
-    const f = porFondo(d.lista, medidos).map((x) => ({
+    const base = porFondo(d.lista, medidos);
+    const resumen = tarjetas([
+      { etiqueta: "Fondos", valor: base.length, detalle: `${base.filter((x) => x.estado === "abierto").length} abiertos` },
+      { etiqueta: "Encargos abiertos", valor: base.reduce((t, x) => t + x.encargos_abiertos, 0), detalle: `de ${base.reduce((t, x) => t + x.encargos, 0)}` },
+      { etiqueta: "Casos", valor: base.reduce((t, x) => t + x.casos, 0) },
+      { etiqueta: "Horas medidas", valor: num(base.reduce((t, x) => t + x.horas, 0)) },
+      { etiqueta: "Coste USD estimado", valor: num(base.reduce((t, x) => t + x.coste_usd, 0)) },
+    ]);
+    const f = base.map((x) => ({
       fondo: `#${x.n}`, titulo: x.titulo, estado: x.estado, causa: x.causa, encargos: `${x.encargos - x.encargos_abiertos}/${x.encargos} cerrados`,
       casos: x.casos, medidos: x.medidos, horas: x.medidos ? num(x.horas) : "", coste_usd_estimado: x.medidos ? num(x.coste_usd) : "",
     }));
-    const aviso = d.error ? `<p class="aviso">Datos viejos: ${esc(d.error)}</p>` : "";
-    const nota = `<p class="aviso">Cada fondo con los encargos y casos que cuelgan de él (bloque <code>fondo:</code>). Horas y coste solo de los encargos medidos en el último informe de fabrica; mayor coste primero.</p>`;
-    return ["Fondos y sus encargos", `${aviso}${nota}${tabla(f, ["fondo", "titulo", "estado", "causa", "encargos", "casos", "medidos", "horas", "coste_usd_estimado"])}`, d];
+    const aviso = d.error ? banner("aviso", `Datos viejos: ${esc(d.error)}`) : "";
+    const explica = nota(`Cada fondo con los encargos y casos que cuelgan de él (bloque <code>fondo:</code>). Horas y coste solo de los encargos medidos en el último informe de fabrica; mayor coste primero.`);
+    return ["Fondos y sus encargos", `${aviso}${resumen}${explica}${tabla(f, ["fondo", "titulo", "estado", "causa", "encargos", "casos", "medidos", "horas", "coste_usd_estimado"])}`, d];
   },
   "/coste": async () => {
     const lista = leerInformes();
-    if (!lista.length) return ["Coste y tiempo", `<p>Aún no ha llegado ningún informe. Se envía desde el PC con <code>cliente/enviar-fabrica.mjs</code>.</p>`, null];
+    if (!lista.length) return ["Coste y tiempo", banner("informacion", "Aún no ha llegado ningún informe. Se envía desde el PC con <code>cliente/enviar-fabrica.mjs</code>."), null];
     const u = lista[0].informe, s = u.sinIssue;
     const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
     const dia = tabla(lista.map((x) => ({ dia: x.dia, sesiones: x.informe.cobertura.sesiones, horas: num(x.informe.sinIssue.minutos / 60),
@@ -177,21 +185,32 @@ const vistas = {
       tokens_millones: num(e.tokens.total / 1e6), coste_usd_estimado: num(e.coste_usd), sesiones: e.sesiones, rondas: e.rondas ?? "", aguanto: e.aguanto ?? "",
     }));
     const procedencia = u.datos_github === "fresco" ? "datos de GitHub al día"
-      : u.datos_github?.startsWith("cache") ? `ATENCIÓN: los datos de GitHub vienen de una caché (${esc(u.datos_github)})`
-        : u.datos_github === "sin-github" ? "enviado sin unir con los issues" : "";
-    const aviso = `<p class="aviso">El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Encargos medidos: ${u.cobertura.encargos_medidos ?? 0}${procedencia ? ` · ${procedencia}` : ""}.</p>`;
+      : u.datos_github === "sin-github" ? "enviado sin unir con los issues" : "";
+    const deCache = u.datos_github?.startsWith("cache");
+    const aviso = nota(`El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Encargos medidos: ${u.cobertura.encargos_medidos ?? 0}${procedencia && !deCache ? ` · ${procedencia}` : ""}.`) + (deCache ? banner("aviso", `Los datos de GitHub vienen de una caché (${esc(u.datos_github)}).`) : "");
+    const resumen = tarjetas([
+      { etiqueta: "Sesiones", valor: u.cobertura.sesiones }, { etiqueta: "Horas", valor: num(s.minutos / 60) },
+      { etiqueta: "Tokens (millones)", valor: num(s.tokens.total / 1e6) }, { etiqueta: "Coste USD estimado", valor: num(s.coste_usd) },
+      { etiqueta: "Encargos medidos", valor: u.cobertura.encargos_medidos ?? 0 },
+    ]);
     const porEncargo = encargos.length
       ? `<h2>Por encargo (mayor coste primero)</h2>${tabla(encargos, ["issue", "titulo", "fondo", "horas", "tokens_millones", "coste_usd_estimado", "sesiones", "rondas", "aguanto"])}`
       : `<h2>Por encargo</h2><p>Este informe no trae encargos medidos.</p>`;
-    return ["Coste y tiempo", `${aviso}${porEncargo}<h2>Total por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
+    return ["Coste y tiempo", `${aviso}${resumen}${porEncargo}<h2>Total por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
   },
   "/issues": async () => {
     const d = await leerIssues();
     const cuenta = contar(d.lista, "tipo", "estado");
     const resumen = tabla(Object.entries(cuenta).map(([tipo, c]) => ({ tipo, abiertos: c.abierto ?? 0, cerrados: c.cerrado ?? 0 })), ["tipo", "abiertos", "cerrados"]);
     const abiertos = d.lista.filter((x) => x.estado === "abierto").sort((a, b) => b.n - a.n);
-    const aviso = d.error ? `<p class="aviso">Datos viejos: ${esc(d.error)}</p>` : "";
-    return ["Issues", `${aviso}<h2>Resumen</h2>${resumen}<h2>Abiertos (${abiertos.length})</h2>${tabla(abiertos, ["n", "tipo", "area", "causa", "fondo", "asignado", "titulo"])}`, d];
+    const aviso = d.error ? banner("aviso", `Datos viejos: ${esc(d.error)}`) : "";
+    const abiertosDe = (t) => cuenta[t]?.abierto ?? 0;
+    const cifras = tarjetas([
+      { etiqueta: "Fondos abiertos", valor: abiertosDe("fondo") }, { etiqueta: "Encargos abiertos", valor: abiertosDe("encargo") },
+      { etiqueta: "Casos abiertos", valor: abiertosDe("caso") }, { etiqueta: "Decisiones abiertas", valor: abiertosDe("decision") },
+      { etiqueta: "Cerrados", valor: d.lista.length - abiertos.length, detalle: `de ${d.lista.length}` },
+    ]);
+    return ["Issues", `${aviso}${cifras}<h2>Resumen</h2>${resumen}<h2>Abiertos (${abiertos.length})</h2>${tabla(abiertos, ["n", "tipo", "area", "causa", "fondo", "asignado", "titulo"])}`, d];
   },
   "/glosario": async () => {
     const d = await leer("glosario");
@@ -228,12 +247,12 @@ export const servidor = createServer(async (req, res) => {
     let titulo, cuerpo, d;
     if (ruta === "/") {
       titulo = "Inicio";
-      cuerpo = `<p>Lee <code>${esc(config.repo)}</code> (${esc(config.rama)}). Secciones: glosario, estándares, agentes, skills, tipos de encargo, fondos, entidades, diseño, issues y coste.</p>`;
+      cuerpo = portada(config.repo, config.rama);
     } else if (/^[/]entidades([/][a-z0-9-]+)?$/.test(ruta)) {
       let datos;
       try { datos = JSON.parse(await texto(config.fuentes.entidades.fichero)); }
       catch { datos = null; }
-      if (!datos) { titulo = "Entidades"; cuerpo = `<p class="aviso">Aún no hay <code>${esc(config.fuentes.entidades.fichero)}</code> en la rama ${esc(config.rama)}. Aparecerá cuando se fusione el mapa de entidades (MenuPlan#566).</p>`; }
+      if (!datos) { titulo = "Entidades"; cuerpo = banner("informacion", `Aún no hay <code>${esc(config.fuentes.entidades.fichero)}</code> en la rama ${esc(config.rama)}. Aparecerá cuando se fusione el mapa de entidades (MenuPlan#566).`); }
       else {
         const v = entidadesVista(datos, ruta.split("/")[2]);
         if (!v.existe) { res.writeHead(404).end("No existe esa entidad"); return; }
@@ -248,8 +267,8 @@ export const servidor = createServer(async (req, res) => {
       d = { t: Date.now() };
     } else if (vistas[ruta]) [titulo, cuerpo, d] = await vistas[ruta]();
     else { res.writeHead(404).end("No existe"); return; }
-    if (d) cuerpo += `<p class="aviso">${d.actualizado ? `Fichero del ${esc(d.actualizado)}; ` : ""}leído ${new Date(d.t).toISOString()}</p>`;
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(pagina(titulo, config.nombre, cuerpo));
+    if (d) cuerpo += nota(`${d.actualizado ? `Fichero del ${esc(d.actualizado)}; ` : ""}leído ${new Date(d.t).toISOString()}`);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(pagina(titulo, config.nombre, cuerpo, ruta));
   } catch (e) {
     res.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end(`Error leyendo la fuente: ${e.message}`);
   }

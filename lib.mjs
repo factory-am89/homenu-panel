@@ -1,4 +1,5 @@
 // Funciones puras del panel: escapar HTML y pintar tablas. Sin dependencias.
+import { CSS } from "./estilo.mjs";
 export const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -10,11 +11,46 @@ export function filas(datos) {
 
 const celda = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "object" && v !== null ? JSON.stringify(v) : v);
 
-/** Tabla HTML con las columnas pedidas; todo lo que viene de fuera va escapado. */
-export function tabla(lista, columnas) {
-  const cab = columnas.map((c) => `<th>${esc(c)}</th>`).join("");
-  const cuerpo = lista.map((f) => `<tr>${columnas.map((c) => `<td>${esc(celda(f[c]))}</td>`).join("")}</tr>`).join("");
-  return `<table><thead><tr>${cab}</tr></thead><tbody>${cuerpo}</tbody></table>`;
+/** Envuelve una tabla en su caja: scroll contenido, cabecera fija y alcanzable con teclado. */
+export const cajaTabla = (html, etiqueta = "Tabla de datos") =>
+  `<div class="tabla-caja" role="region" aria-label="${esc(etiqueta)}" tabindex="0">${html}</div>`;
+
+// Estados con insignia: valor -> variante. Todo valor desconocido sale neutro (y siempre con su texto).
+const VARIANTE = {
+  abierto: "informacion", cerrado: "exito", ok: "exito", falla: "error", si: "exito", no: "error", true: "exito", false: "error",
+  con_registro: "exito", parcial: "aviso", sin_registro: "informacion",
+};
+const COLUMNAS_ESTADO = new Set(["estado", "aguanto", "registro"]);
+
+/** Insignia de estado: texto siempre; el color es un refuerzo (WCAG 1.4.1). */
+export const insignia = (valor) => {
+  const v = String(valor ?? "");
+  return `<span class="insignia i-${VARIANTE[v.toLowerCase()] ?? "neutro"}">${esc(v)}</span>`;
+};
+
+/** Aviso con variante (exito, aviso, error, informacion); la etiqueta evita que el color sea la única señal. */
+const ETIQUETA_BANNER = { exito: "Hecho", aviso: "Aviso", error: "Error", informacion: "Información" };
+export const banner = (variante, html) =>
+  `<div class="banner b-${variante}" role="${variante === "error" ? "alert" : "note"}"><p><strong>${ETIQUETA_BANNER[variante]}.</strong> ${html}</p></div>`;
+
+/** Nota discreta (texto suave). `html` ya va escapado por quien llama. */
+export const nota = (html) => `<p class="nota">${html}</p>`;
+
+/** Tarjetas de resumen: [{ etiqueta, valor, detalle? }]. */
+export const tarjetas = (lista) =>
+  `<dl class="tarjetas">${lista.map((t) => `<div class="tarjeta"><dt>${esc(t.etiqueta)}</dt><dd>${esc(t.valor)}${t.detalle ? `<span class="detalle">${esc(t.detalle)}</span>` : ""}</dd></div>`).join("")}</dl>`;
+
+const esNumero = (v) => typeof v === "number" || (typeof v === "string" && /^-?[0-9][0-9.,]*$/.test(v));
+
+/** Tabla HTML con las columnas pedidas; todo lo que viene de fuera va escapado. Columnas numéricas a la derecha. */
+export function tabla(lista, columnas, etiqueta) {
+  if (!lista.length) return `<p class="vacio">Sin filas todavía.</p>`;
+  const num = new Set(columnas.filter((c) => lista.some((f) => f[c] !== "" && f[c] != null) && lista.every((f) => f[c] === "" || f[c] == null || esNumero(f[c]))));
+  const cls = (c) => (num.has(c) ? ' class="num"' : "");
+  const cab = columnas.map((c) => `<th scope="col"${cls(c)}>${esc(c.replace(/_/g, " "))}</th>`).join("");
+  const dato = (c, f) => (COLUMNAS_ESTADO.has(c) && f[c] !== "" && f[c] != null ? insignia(celda(f[c])) : esc(celda(f[c])));
+  const cuerpo = lista.map((f) => `<tr>${columnas.map((c) => `<td${cls(c)}>${dato(c, f)}</td>`).join("")}</tr>`).join("");
+  return cajaTabla(`<table><thead><tr>${cab}</tr></thead><tbody>${cuerpo}</tbody></table>`, etiqueta);
 }
 
 const valorDe = (etiquetas, prefijo) =>
@@ -100,15 +136,61 @@ export function validarInforme(x) {
 export const diaDe = (fecha = new Date()) =>
   new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Madrid" }).format(fecha);
 
-export function pagina(titulo, proyecto, cuerpo) {
-  return `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(titulo)} · Panel</title>
-<style>body{font:15px system-ui;margin:0;padding:16px;max-width:1100px;margin-inline:auto;color:#1c1c1c;background:#fff}
-@media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
-nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
-.aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/entidades">Entidades</a><a href="/diseno">Diseño</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
-<h1>${esc(titulo)}</h1>${cuerpo}</html>`;
+// Secciones del panel, agrupadas. Una sola lista: la navegación y la portada salen de aquí.
+export const SECCIONES = [
+  { grupo: "Conocimiento", items: [
+    { href: "/glosario", nombre: "Glosario", para: "Las palabras del proceso, su definición y los sinónimos prohibidos." },
+    { href: "/estandares", nombre: "Estándares", para: "Qué es hacer bien cada tarea de cada agente, y de dónde sale." },
+    { href: "/agentes", nombre: "Agentes", para: "Quién construye y quién juzga, con sus planos, herramientas y modelo." },
+    { href: "/skills", nombre: "Skills", para: "Los runbooks con su dueño y cuándo caducan, los más urgentes primero." },
+    { href: "/encargos", nombre: "Tipos de encargo", para: "El pipeline de agentes que sigue cada tipo de encargo." },
+  ] },
+  { grupo: "Trabajo", items: [
+    { href: "/fondos", nombre: "Fondos", para: "Los problemas de fondo con los encargos y casos que cuelgan de ellos, y su coste." },
+    { href: "/issues", nombre: "Issues", para: "Fondos, casos, encargos y decisiones, abiertos y cerrados." },
+    { href: "/coste", nombre: "Coste", para: "Horas, tokens y dólares estimados por encargo y por día." },
+  ] },
+  { grupo: "Mapa", items: [
+    { href: "/entidades", nombre: "Entidades", para: "El mapa de entidades del proyecto y cómo se relacionan." },
+    { href: "/diseno", nombre: "Diseño", para: "La biblioteca de diseño: meta-sistema, sistema de HoMenu y su estado." },
+  ] },
+];
+
+const activa = (href, ruta) => ruta === href || ruta.startsWith(`${href}/`);
+
+/** Cabecera común: marca, navegación agrupada y contenido. `ruta` marca el elemento activo (aria-current). */
+export function pagina(titulo, proyecto, cuerpo, ruta = "") {
+  const grupos = SECCIONES.map((g, i) => `<li class="grupo"><span class="etiqueta" id="grupo-${i}">${esc(g.grupo)}</span><ul aria-labelledby="grupo-${i}">${g.items.map((s) =>
+    `<li><a href="${s.href}"${activa(s.href, ruta) ? ' aria-current="page"' : ""}>${esc(s.nombre)}</a></li>`).join("")}</ul></li>`).join("");
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>${esc(titulo)} · ${esc(proyecto)}</title>
+<style>${CSS}</style>
+</head>
+<body>
+<a class="salto" href="#contenido">Saltar al contenido</a>
+<header class="cabecera"><div class="cabecera-in">
+<a class="marca" href="/"${ruta === "/" ? ' aria-current="page"' : ""}>${esc(proyecto)}</a>
+<nav aria-label="Secciones"><ul class="nav">${grupos}</ul></nav>
+</div></header>
+<main class="contenido" id="contenido" tabindex="-1">
+<h1>${esc(titulo)}</h1>
+${cuerpo}
+</main>
+</body>
+</html>`;
+}
+
+/** Portada: qué es el panel y una tarjeta con enlace por sección. */
+export function portada(repo, rama) {
+  const intro = nota(`Panel de la factoría: enseña, en solo lectura, cómo trabaja el proyecto. Lee <code>${esc(repo)}</code> (rama ${esc(rama)}) en GitHub y los informes de coste que envía el PC de Pablo. Cada sección dice de qué fichero sale.`);
+  const grupos = SECCIONES.map((g) => `<h2>${esc(g.grupo)}</h2><ul class="portada">${g.items.map((s) =>
+    `<li><a href="${s.href}"><strong>${esc(s.nombre)}</strong><span>${esc(s.para)}</span></a></li>`).join("")}</ul>`).join("");
+  return `${intro}${grupos}`;
 }
 
 // "diseno → qa + revisor": los pasos de un tipo de encargo (ops/tipos-de-encargo.json) en una línea.
@@ -142,7 +224,7 @@ export function porFondo(issues, medidos = []) {
 
 const EJES = [["puente", "Puentes"], ["horizontal", "Cómo trabajamos"], ["vertical", "El producto"]];
 const REGISTROS = ["con_registro", "parcial", "sin_registro"];
-const enlace = (id, nombre) => `<a href="/entidades/${esc(id)}">${esc(nombre ?? id)}</a>`;
+const enlace = (id, nombre, activo = false) => `<a href="/entidades/${esc(id)}"${activo ? ' aria-current="page"' : ""}>${esc(nombre ?? id)}</a>`;
 
 /**
  * Inventario de entidades (ops/entidades.json de MenuPlan): barra lateral con todas, agrupadas por eje,
@@ -155,29 +237,35 @@ export function entidadesVista(datos, id) {
   if (id && !por.has(id)) return { existe: false, html: "" };
   const lateral = EJES.map(([eje, titulo]) => {
     const lista = entidades.filter((e) => e.eje === eje).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-    return `<h3>${esc(titulo)} (${lista.length})</h3><ul>${lista.map((e) => `<li${e.id === id ? ' class="activa"' : ""}>${enlace(e.id, e.nombre)}</li>`).join("")}</ul>`;
+    return `<span class="etiqueta">${esc(titulo)} (${lista.length})</span><ul>${lista.map((e) => `<li>${enlace(e.id, e.nombre, e.id === id)}</li>`).join("")}</ul>`;
   }).join("");
   const nombre = (x) => enlace(x, por.get(x)?.nombre ?? x);
+  const tr = (cols) => `<tr>${cols.map((c) => `<td>${c}</td>`).join("")}</tr>`;
+  const tablaHtml = (cab, filasHtml, etiqueta) => cajaTabla(`<table><thead><tr>${cab.map((c) => `<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>${filasHtml.join("")}</tbody></table>`, etiqueta);
   let centro;
   if (!id) {
-    const cuenta = EJES.map(([eje, titulo]) => `<tr><td>${esc(titulo)}</td>${REGISTROS.map((r) => `<td>${entidades.filter((e) => e.eje === eje && e.registro === r).length}</td>`).join("")}</tr>`).join("");
+    const de = (eje, r) => entidades.filter((e) => e.eje === eje && e.registro === r).length;
+    const total = (r) => entidades.filter((e) => e.registro === r).length;
+    const resumen = tarjetas([
+      { etiqueta: "Entidades", valor: entidades.length }, { etiqueta: "Relaciones", valor: relaciones.length },
+      ...REGISTROS.map((r) => ({ etiqueta: r, valor: total(r) })),
+    ]);
+    const cuenta = EJES.map(([eje, titulo]) => `<tr><td>${esc(titulo)}</td>${REGISTROS.map((r) => `<td class="num">${de(eje, r)}</td>`).join("")}</tr>`);
     const todas = entidades.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, "es")).map((e) =>
-      `<tr><td>${enlace(e.id, e.nombre)}</td><td>${esc(e.eje)}</td><td>${esc(e.registro)}</td><td>${esc(e.fuente_de_verdad)}</td></tr>`).join("");
-    centro = `<p>${entidades.length} entidades y ${relaciones.length} relaciones. «Registro» dice cómo vive cada una hoy: <code>con_registro</code> (fichero propio con id y test), <code>parcial</code> o <code>sin_registro</code> (solo prosa o logs).</p>
-<h2>Registro por eje</h2><table><thead><tr><th>Eje</th>${REGISTROS.map((r) => `<th>${r}</th>`).join("")}</tr></thead><tbody>${cuenta}</tbody></table>
-<h2>Todas</h2><table><thead><tr><th>Entidad</th><th>Eje</th><th>Registro</th><th>Fuente hoy</th></tr></thead><tbody>${todas}</tbody></table>`;
+      `<tr><td>${enlace(e.id, e.nombre)}</td><td>${esc(e.eje)}</td><td>${insignia(e.registro)}</td><td>${esc(e.fuente_de_verdad)}</td></tr>`);
+    centro = `${resumen}<p>${entidades.length} entidades y ${relaciones.length} relaciones. «Registro» dice cómo vive cada una hoy: <code>con_registro</code> (fichero propio con id y test), <code>parcial</code> o <code>sin_registro</code> (solo prosa o logs).</p>
+<h2>Registro por eje</h2>${tablaHtml(["Eje", ...REGISTROS], cuenta, "Registro por eje")}
+<h2>Todas</h2>${tablaHtml(["Entidad", "Eje", "Registro", "Fuente hoy"], todas, "Todas las entidades")}`;
   } else {
     const e = por.get(id);
     const sale = relaciones.filter((r) => r.a === id), llega = relaciones.filter((r) => r.b === id);
     const ficha = [["Eje", e.eje], ["Registro", e.registro], ["Fuente hoy", e.fuente_de_verdad], ["Formato de id", e.formato_id],
       ["Palabras prohibidas", (e.sinonimos_prohibidos ?? []).join(", ")], ["Nota", e.nota]]
-      .filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
-    const tr = (cols) => `<tr>${cols.map((c) => `<td>${c}</td>`).join("")}</tr>`;
-    const tablaRel = (cab, filasHtml) => filasHtml.length ? `<table><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filasHtml.join("")}</tbody></table>` : "<p>Ninguna.</p>";
-    centro = `<p>${esc(e.definicion)}</p><table><tbody>${ficha}</tbody></table>
-<h2>Relaciones que salen (${sale.length})</h2>${tablaRel(["Relación", "Con", "Campo donde se guarda"], sale.map((r) => tr([esc(r.relacion), nombre(r.b), esc(r.campo)])))}
-<h2>Relaciones que llegan (${llega.length})</h2>${tablaRel(["Desde", "Relación", "Campo donde se guarda"], llega.map((r) => tr([nombre(r.a), esc(r.relacion), esc(r.campo)])))}`;
+      .filter(([, v]) => v).map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${k === "Registro" ? insignia(v) : esc(v)}</td></tr>`).join("");
+    const tablaRel = (cab, filasHtml, etiqueta) => filasHtml.length ? tablaHtml(cab, filasHtml, etiqueta) : `<p class="vacio">Ninguna.</p>`;
+    centro = `<p>${esc(e.definicion)}</p>${cajaTabla(`<table><tbody>${ficha}</tbody></table>`, "Ficha de la entidad")}
+<h2>Relaciones que salen (${sale.length})</h2>${tablaRel(["Relación", "Con", "Campo donde se guarda"], sale.map((r) => tr([esc(r.relacion), nombre(r.b), esc(r.campo)])), "Relaciones que salen")}
+<h2>Relaciones que llegan (${llega.length})</h2>${tablaRel(["Desde", "Relación", "Campo donde se guarda"], llega.map((r) => tr([nombre(r.a), esc(r.relacion), esc(r.campo)])), "Relaciones que llegan")}`;
   }
-  const estilo = `<style>.inv{display:flex;gap:24px;align-items:flex-start}.inv aside{flex:0 0 230px;border-right:1px solid #ddd;padding-right:12px}.inv aside ul{list-style:none;margin:0 0 8px;padding:0}.inv aside li{padding:2px 0}.inv aside h3{margin:12px 0 4px;font-size:13px;text-transform:uppercase;opacity:.7}.inv .activa a{font-weight:700}.inv main{flex:1;min-width:0}@media(max-width:700px){.inv{flex-direction:column}.inv aside{flex:none;border-right:0;padding-right:0}}</style>`;
-  return { existe: true, titulo: id ? por.get(id).nombre : "Entidades", html: `${estilo}<div class="inv"><aside>${lateral}</aside><main>${centro}</main></div>` };
+  return { existe: true, titulo: id ? por.get(id).nombre : "Entidades", html: `<div class="inv"><aside class="lateral" aria-label="Entidades">${lateral}</aside><div class="inv-centro">${centro}</div></div>` };
 }
