@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, pagina, pasosTexto, porFondo, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
+import { caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, pagina, pasosTexto, porFondo, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
@@ -72,6 +72,7 @@ async function leerIssues() {
 // Texto de un fichero del repo (raw no cuenta contra el límite de la API). Caché de 15 min, y con datos viejos si GitHub falla.
 const textos = new Map();
 async function texto(ruta) {
+  if (process.env.MENUPLAN_LOCAL) return readFileSync(join(process.env.MENUPLAN_LOCAL, ruta), "utf8"); // desarrollo: lee de una copia en disco
   const hit = textos.get(ruta);
   if (hit && Date.now() - hit.t < CACHE_ISSUES_MS) return hit.txt;
   try {
@@ -227,6 +228,17 @@ export const servidor = createServer(async (req, res) => {
     if (ruta === "/") {
       titulo = "Inicio";
       cuerpo = `<p>Lee <code>${esc(config.repo)}</code> (${esc(config.rama)}). Secciones: glosario, estándares de agentes e issues. Coste y tiempo vienen después.</p>`;
+    } else if (/^[/]entidades([/][a-z0-9-]+)?$/.test(ruta)) {
+      let datos;
+      try { datos = JSON.parse(await texto(config.fuentes.entidades.fichero)); }
+      catch { datos = null; }
+      if (!datos) { titulo = "Entidades"; cuerpo = `<p class="aviso">Aún no hay <code>${esc(config.fuentes.entidades.fichero)}</code> en la rama ${esc(config.rama)}. Aparecerá cuando se fusione el mapa de entidades (MenuPlan#566).</p>`; }
+      else {
+        const v = entidadesVista(datos, ruta.split("/")[2]);
+        if (!v.existe) { res.writeHead(404).end("No existe esa entidad"); return; }
+        [titulo, cuerpo] = [v.titulo, v.html];
+        d = { t: Date.now() };
+      }
     } else if (vistas[ruta]) [titulo, cuerpo, d] = await vistas[ruta]();
     else { res.writeHead(404).end("No existe"); return; }
     if (d) cuerpo += `<p class="aviso">${d.actualizado ? `Fichero del ${esc(d.actualizado)}; ` : ""}leído ${new Date(d.t).toISOString()}</p>`;

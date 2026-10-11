@@ -78,3 +78,26 @@ test("porFondo cuenta encargos y casos de cada fondo y suma lo medido", () => {
   assert.equal(r.length, 1);
   assert.deepEqual([r[0].encargos, r[0].encargos_abiertos, r[0].casos, r[0].medidos, r[0].horas, r[0].coste_usd], [2, 1, 1, 1, 1.5, 3]);
 });
+
+import { entidadesVista } from "./lib.mjs";
+const ents = {
+  entidades: [
+    { id: "evento", nombre: "Evento", eje: "puente", definicion: "Un hecho <con> fecha.", fuente_de_verdad: "hooks", registro: "parcial", nota: "n" },
+    { id: "sesion", nombre: "Sesión", eje: "horizontal", definicion: "d", fuente_de_verdad: "ninguna", registro: "sin_registro" },
+    { id: "casa", nombre: "Casa", eje: "vertical", definicion: "d", fuente_de_verdad: "x", registro: "con_registro" },
+  ],
+  relaciones: [{ a: "evento", relacion: "ocurre_en", b: "sesion", campo: "sesion" }],
+};
+test("entidadesVista: la ficha enseña las relaciones que salen y las que llegan, enlazadas", () => {
+  const ev = entidadesVista(ents, "evento").html, se = entidadesVista(ents, "sesion").html;
+  assert.match(ev, /Relaciones que salen \(1\)[\s\S]*ocurre_en[\s\S]*href="\/entidades\/sesion"/);
+  assert.match(se, /Relaciones que llegan \(1\)[\s\S]*href="\/entidades\/evento"/);
+  assert.match(se, /Relaciones que salen \(0\)[\s\S]*Ninguna/);
+});
+test("entidadesVista: barra lateral con todas por eje, escapa HTML y rechaza un id desconocido", () => {
+  const r = entidadesVista(ents, "evento");
+  for (const id of ["evento", "sesion", "casa"]) assert.ok(r.html.includes(`href="/entidades/${id}"`));
+  assert.ok(!r.html.includes("<con>") && r.html.includes("&lt;con&gt;"));
+  assert.equal(entidadesVista(ents, "nada").existe, false);
+  assert.match(entidadesVista(ents).html, /3 entidades y 1 relaciones/);
+});

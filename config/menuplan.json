@@ -18,6 +18,9 @@
     "estandares": {
       "fichero": "ops/estandares-agentes.json",
       "lista": "agentes"
+    },
+    "entidades": {
+      "fichero": "ops/entidades.json"
     }
   },
   "tiposDeEncargo": {

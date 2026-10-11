@@ -107,7 +107,7 @@ export function pagina(titulo, proyecto, cuerpo) {
 @media(prefers-color-scheme:dark){body{color:#e8e8e8;background:#161616}th{background:#242424}td,th{border-color:#333}}
 nav a{margin-right:14px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f3f3}
 .aviso{opacity:.7}</style>
-<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
+<nav><strong>${esc(proyecto)}</strong> · <a href="/">Inicio</a><a href="/glosario">Glosario</a><a href="/estandares">Estándares</a><a href="/agentes">Agentes</a><a href="/skills">Skills</a><a href="/encargos">Tipos de encargo</a><a href="/fondos">Fondos</a><a href="/entidades">Entidades</a><a href="/issues">Issues</a><a href="/coste">Coste</a></nav>
 <h1>${esc(titulo)}</h1>${cuerpo}</html>`;
 }
 
@@ -138,4 +138,46 @@ export function porFondo(issues, medidos = []) {
       coste_usd: medidosDelFondo.reduce((s, e) => s + e.coste_usd, 0),
     };
   }).sort((a, b) => b.coste_usd - a.coste_usd || b.encargos - a.encargos);
+}
+
+const EJES = [["puente", "Puentes"], ["horizontal", "Cómo trabajamos"], ["vertical", "El producto"]];
+const REGISTROS = ["con_registro", "parcial", "sin_registro"];
+const enlace = (id, nombre) => `<a href="/entidades/${esc(id)}">${esc(nombre ?? id)}</a>`;
+
+/**
+ * Inventario de entidades (ops/entidades.json de MenuPlan): barra lateral con todas, agrupadas por eje,
+ * y a la derecha el resumen o la ficha de una entidad con las relaciones que salen y que llegan, enlazadas.
+ * `id` desconocido → existe: false (el servidor responde 404).
+ */
+export function entidadesVista(datos, id) {
+  const entidades = datos?.entidades ?? [], relaciones = datos?.relaciones ?? [];
+  const por = new Map(entidades.map((e) => [e.id, e]));
+  if (id && !por.has(id)) return { existe: false, html: "" };
+  const lateral = EJES.map(([eje, titulo]) => {
+    const lista = entidades.filter((e) => e.eje === eje).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    return `<h3>${esc(titulo)} (${lista.length})</h3><ul>${lista.map((e) => `<li${e.id === id ? ' class="activa"' : ""}>${enlace(e.id, e.nombre)}</li>`).join("")}</ul>`;
+  }).join("");
+  const nombre = (x) => enlace(x, por.get(x)?.nombre ?? x);
+  let centro;
+  if (!id) {
+    const cuenta = EJES.map(([eje, titulo]) => `<tr><td>${esc(titulo)}</td>${REGISTROS.map((r) => `<td>${entidades.filter((e) => e.eje === eje && e.registro === r).length}</td>`).join("")}</tr>`).join("");
+    const todas = entidades.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, "es")).map((e) =>
+      `<tr><td>${enlace(e.id, e.nombre)}</td><td>${esc(e.eje)}</td><td>${esc(e.registro)}</td><td>${esc(e.fuente_de_verdad)}</td></tr>`).join("");
+    centro = `<p>${entidades.length} entidades y ${relaciones.length} relaciones. «Registro» dice cómo vive cada una hoy: <code>con_registro</code> (fichero propio con id y test), <code>parcial</code> o <code>sin_registro</code> (solo prosa o logs).</p>
+<h2>Registro por eje</h2><table><thead><tr><th>Eje</th>${REGISTROS.map((r) => `<th>${r}</th>`).join("")}</tr></thead><tbody>${cuenta}</tbody></table>
+<h2>Todas</h2><table><thead><tr><th>Entidad</th><th>Eje</th><th>Registro</th><th>Fuente hoy</th></tr></thead><tbody>${todas}</tbody></table>`;
+  } else {
+    const e = por.get(id);
+    const sale = relaciones.filter((r) => r.a === id), llega = relaciones.filter((r) => r.b === id);
+    const ficha = [["Eje", e.eje], ["Registro", e.registro], ["Fuente hoy", e.fuente_de_verdad], ["Formato de id", e.formato_id],
+      ["Palabras prohibidas", (e.sinonimos_prohibidos ?? []).join(", ")], ["Nota", e.nota]]
+      .filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
+    const tr = (cols) => `<tr>${cols.map((c) => `<td>${c}</td>`).join("")}</tr>`;
+    const tablaRel = (cab, filasHtml) => filasHtml.length ? `<table><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filasHtml.join("")}</tbody></table>` : "<p>Ninguna.</p>";
+    centro = `<p>${esc(e.definicion)}</p><table><tbody>${ficha}</tbody></table>
+<h2>Relaciones que salen (${sale.length})</h2>${tablaRel(["Relación", "Con", "Campo donde se guarda"], sale.map((r) => tr([esc(r.relacion), nombre(r.b), esc(r.campo)])))}
+<h2>Relaciones que llegan (${llega.length})</h2>${tablaRel(["Desde", "Relación", "Campo donde se guarda"], llega.map((r) => tr([nombre(r.a), esc(r.relacion), esc(r.campo)])))}`;
+  }
+  const estilo = `<style>.inv{display:flex;gap:24px;align-items:flex-start}.inv aside{flex:0 0 230px;border-right:1px solid #ddd;padding-right:12px}.inv aside ul{list-style:none;margin:0 0 8px;padding:0}.inv aside li{padding:2px 0}.inv aside h3{margin:12px 0 4px;font-size:13px;text-transform:uppercase;opacity:.7}.inv .activa a{font-weight:700}.inv main{flex:1;min-width:0}@media(max-width:700px){.inv{flex-direction:column}.inv aside{flex:none;border-right:0;padding-right:0}}</style>`;
+  return { existe: true, titulo: id ? por.get(id).nombre : "Entidades", html: `${estilo}<div class="inv"><aside>${lateral}</aside><main>${centro}</main></div>` };
 }
