@@ -1,0 +1,3 @@
+{
+  "resultados": ["desplegado", "sin-cambios", "necesita-ok", "sigue-fallido", "fallo-fetch", "fallo-build", "fallo-arranque", "ocupado"]
+}
