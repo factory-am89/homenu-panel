@@ -7,6 +7,8 @@ services:
       - "100.73.252.32:8080:8080"
     volumes:
       - datos:/data
+      # la carpeta entera, no el fichero: tirar.sh lo reemplaza con mv y un montaje de fichero se quedaría con el inodo viejo
+      - /var/lib/panel-despliegue:/despliegue:ro
     mem_limit: 128m
     read_only: true
     cap_drop: [ALL]

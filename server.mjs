@@ -232,6 +232,19 @@ const vistas = {
   },
 };
 
+// Estado del último intento de despliegue: lo escribe despliegue/tirar.sh y aquí solo se lee. Fuera del vocabulario cerrado, 503: nunca un estado inventado.
+const RESULTADOS = JSON.parse(readFileSync(new URL("./despliegue/resultados.json", import.meta.url), "utf8")).resultados;
+
+function estadoDespliegue() {
+  const fichero = process.env.ESTADO_DESPLIEGUE;
+  if (!fichero) return { codigo: 503, cuerpo: { error: "ESTADO_DESPLIEGUE sin definir" } };
+  let estado;
+  try { estado = JSON.parse(readFileSync(fichero, "utf8")); }
+  catch (e) { return { codigo: 503, cuerpo: { error: `no se pudo leer estado.json: ${e.message}` } }; }
+  if (!RESULTADOS.includes(estado?.resultado)) return { codigo: 503, cuerpo: { error: `estado.json: resultado fuera del vocabulario (${RESULTADOS.join(", ")})` } };
+  return { codigo: 200, cuerpo: estado };
+}
+
 export const servidor = createServer(async (req, res) => {
   const ruta = new URL(req.url, "http://x").pathname;
   if (req.method === "POST" && ruta === "/ingest/fabrica") {
@@ -249,6 +262,11 @@ export const servidor = createServer(async (req, res) => {
         res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" }));
       }
     });
+    return;
+  }
+  if (req.method === "GET" && ruta === "/despliegue") {
+    const { codigo, cuerpo } = estadoDespliegue();
+    res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" }).end(JSON.stringify(cuerpo));
     return;
   }
   try {
