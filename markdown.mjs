@@ -69,19 +69,31 @@ export function markdownAHtml(md) {
 }
 
 /**
- * Biblioteca de diseño: barra lateral con los documentos y, del abierto, sus apartados; a la derecha el documento.
- * `docs`: [{id, titulo, fichero}]. `actual`: id o undefined (portada). `md`: texto del documento abierto.
+ * Biblioteca de documentos: barra lateral con los documentos (agrupados si traen `grupo`) y, del abierto, sus
+ * apartados; a la derecha el documento. `docs`: [{id, titulo, fichero, para?, grupo?}]. `actual`: id o undefined
+ * (portada). `md`: texto del abierto. `base`: ruta de la vista. `fuente`: de dónde sale, para la nota.
  */
-export function bibliotecaDiseno(docs, actual, md) {
+export function biblioteca({ base, docs, actual, md = "", titulo, intro = "", fuente = "", etiqueta = "Documentos" }) {
   const abierto = docs.find((d) => d.id === actual);
-  const lista = `<span class="etiqueta">Documentos</span><ul>${docs.map((d) => `<li><a href="/diseno/${esc(d.id)}"${d.id === actual ? ' aria-current="page"' : ""}>${esc(d.titulo)}</a></li>`).join("")}</ul>`;
+  const enlace = (d) => `<li><a href="${esc(base)}/${esc(d.id)}"${d.id === actual ? ' aria-current="page"' : ""}>${esc(d.titulo)}</a></li>`;
+  const grupos = [...new Set(docs.map((d) => d.grupo ?? ""))];
+  const lista = grupos.map((g) => `<span class="etiqueta">${esc(g || "Documentos")}</span><ul>${docs.filter((d) => (d.grupo ?? "") === g).map(enlace).join("")}</ul>`).join("");
   let indice = "", centro;
   if (abierto) {
-    const { html, titulos } = markdownAHtml(md);
+    // un frontmatter (---) al principio se enseña tal cual en un bloque, en vez de leerse como raya y párrafos
+    const limpio = String(md).replace(/\r/g, "");
+    const fm = /^---\n([\s\S]*?)\n---(\n|$)/.exec(limpio);
+    const { html, titulos } = markdownAHtml(fm ? limpio.slice(fm[0].length) : limpio);
     indice = `<span class="etiqueta">En este documento</span><ul>${titulos.filter((t) => t.nivel === 2 || t.nivel === 3).map((t) => `<li class="n${t.nivel}"><a href="#${t.id}">${esc(t.texto)}</a></li>`).join("")}</ul>`;
-    centro = `<p class="nota">Sale de <code>${esc(abierto.fichero)}</code> (rama staging de MenuPlan).</p>${html}`;
+    centro = `<p class="nota">Sale de <code>${esc(abierto.fichero)}</code>${fuente ? ` (${esc(fuente)})` : ""}.</p>${fm ? `<pre tabindex="0">${esc(fm[1])}</pre>` : ""}${html}`;
   } else {
-    centro = `<p>La biblioteca de diseño: el meta-sistema (leyes N0, bloques N1, perfiles N2), el sistema de HoMenu y su estado. Cada documento se lee tal cual está en el repositorio.</p><ul>${docs.map((d) => `<li><a href="/diseno/${esc(d.id)}">${esc(d.titulo)}</a>${d.para ? ` — ${esc(d.para)}` : ""}</li>`).join("")}</ul>`;
+    centro = `${intro ? `<p>${esc(intro)}</p>` : ""}<ul>${docs.map((d) => `<li><a href="${esc(base)}/${esc(d.id)}">${esc(d.titulo)}</a>${d.para ? ` — ${esc(d.para)}` : ""}</li>`).join("")}</ul>`;
   }
-  return { existe: !actual || !!abierto, titulo: abierto ? abierto.titulo : "Biblioteca de diseño", html: `<div class="inv"><aside class="lateral" aria-label="Documentos de diseño">${lista}${indice}</aside><div class="inv-centro">${centro}</div></div>` };
+  return { existe: !actual || !!abierto, titulo: abierto ? abierto.titulo : titulo, html: `<div class="inv"><aside class="lateral" aria-label="${esc(etiqueta)}">${lista}${indice}</aside><div class="inv-centro">${centro}</div></div>` };
+}
+
+/** La biblioteca de diseño de MenuPlan: la misma vista, en /diseno. */
+export function bibliotecaDiseno(docs, actual, md) {
+  return biblioteca({ base: "/diseno", docs, actual, md, titulo: "Biblioteca de diseño", fuente: "rama staging de MenuPlan", etiqueta: "Documentos de diseño",
+    intro: "La biblioteca de diseño: el meta-sistema (leyes N0, bloques N1, perfiles N2), el sistema de HoMenu y su estado. Cada documento se lee tal cual está en el repositorio." });
 }
