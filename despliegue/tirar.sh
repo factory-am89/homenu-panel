@@ -21,6 +21,7 @@ guardar() {
   local tmp
   tmp=$(mktemp "$ESTADO/.tmp.XXXXXX")
   printf '%s\n' "$2" > "$tmp"
+  chmod 644 "$tmp" # mktemp lo crea 600 y el panel (otro usuario, en su contenedor) tiene que poder leer estado.json
   mv "$tmp" "$ESTADO/$1"
 }
 

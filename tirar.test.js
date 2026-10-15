@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -70,6 +70,12 @@ test("primer commit: despliega, apunta desplegado y estado.json, sale 0", () => 
   assert.equal(readFileSync(`${m.estado}/desplegado`, "utf8").trim(), sha);
   assert.equal(m.estadoJson().resultado, "desplegado");
   assert.equal(m.estadoJson().sha, sha);
+});
+
+test("estado.json queda legible por otros (el panel lo lee desde su contenedor)", { skip: process.platform === "win32" && "Windows no tiene modos de fichero" }, () => {
+  const m = mundo();
+  tirar(m);
+  assert.equal(statSync(`${m.estado}/estado.json`).mode & 0o044, 0o044);
 });
 
 test("el fetch usa la llave con IdentitiesOnly y StrictHostKeyChecking=yes", () => {
