@@ -1,12 +1,12 @@
 // Panel de la factoría, versión 0: lee de GitHub los ficheros que dice config/<proyecto>.json
 // y los enseña. Sin claves (repos públicos), sin dependencias, sin base de datos todavía.
 import { createServer } from "node:http";
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entidadesDeRegistro } from "./lib.mjs";
-import { bibliotecaDiseno } from "./markdown.mjs";
-import { banner, caducidad, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
+import { biblioteca, bibliotecaDiseno } from "./markdown.mjs";
+import { banner, caducidad, documentosDeFuente, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
@@ -29,6 +29,9 @@ function leerInformes() {
 }
 
 const config = JSON.parse(readFileSync(new URL(`./config/${process.env.PROYECTO ?? "menuplan"}.json`, import.meta.url), "utf8"));
+// Otras fuentes de solo lectura, cada una en su página (hoy, la Factoría). Repos públicos: sin clave. Sin fichero, sin página.
+const URL_FABRICA = new URL("./config/fabrica.json", import.meta.url);
+const fabrica = existsSync(URL_FABRICA) ? JSON.parse(readFileSync(URL_FABRICA, "utf8")) : null;
 const CACHE_MS = 5 * 60_000;
 const cache = new Map();
 
@@ -73,15 +76,15 @@ async function leerIssues() {
 
 // Texto de un fichero del repo (raw no cuenta contra el límite de la API). Caché de 15 min, y con datos viejos si GitHub falla.
 const textos = new Map();
-async function texto(ruta) {
-  if (process.env.MENUPLAN_LOCAL) return readFileSync(join(process.env.MENUPLAN_LOCAL, ruta), "utf8"); // desarrollo: lee de una copia en disco
-  const hit = textos.get(ruta);
+async function texto(ruta, fuente = config) {
+  if (process.env.MENUPLAN_LOCAL && fuente === config) return readFileSync(join(process.env.MENUPLAN_LOCAL, ruta), "utf8"); // desarrollo: lee de una copia en disco
+  const clave = `${fuente.repo}@${fuente.rama}:${ruta}`, hit = textos.get(clave);
   if (hit && Date.now() - hit.t < CACHE_ISSUES_MS) return hit.txt;
   try {
-    const r = await fetch(`https://raw.githubusercontent.com/${config.repo}/${config.rama}/${ruta}`, { signal: AbortSignal.timeout(10_000) });
+    const r = await fetch(`https://raw.githubusercontent.com/${fuente.repo}/${fuente.rama}/${ruta}`, { signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`${ruta}: GitHub contesta ${r.status}`);
     const txt = await r.text();
-    textos.set(ruta, { t: Date.now(), txt });
+    textos.set(clave, { t: Date.now(), txt });
     return txt;
   } catch (e) {
     if (hit) return hit.txt;
@@ -90,15 +93,15 @@ async function texto(ruta) {
 }
 
 const listados = new Map();
-async function listar(dir) {
-  const hit = listados.get(dir);
+async function listar(dir, fuente = config) {
+  const clave = `${fuente.repo}@${fuente.rama}:${dir}`, hit = listados.get(clave);
   if (hit && Date.now() - hit.t < CACHE_ISSUES_MS) return hit.lista;
   try {
-    const r = await fetch(`https://api.github.com/repos/${config.repo}/contents/${dir}?ref=${config.rama}`,
+    const r = await fetch(`https://api.github.com/repos/${fuente.repo}/contents/${dir}?ref=${fuente.rama}`,
       { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`${dir}: GitHub contesta ${r.status}`);
     const lista = await r.json();
-    listados.set(dir, { t: Date.now(), lista });
+    listados.set(clave, { t: Date.now(), lista });
     return lista;
   } catch (e) {
     if (hit) return hit.lista;
@@ -270,6 +273,22 @@ export const servidor = createServer(async (req, res) => {
       if (!v.existe) { res.writeHead(404).end("No existe ese documento"); return; }
       [titulo, cuerpo] = [v.titulo, v.html];
       d = { t: Date.now() };
+    } else if (/^[/]fabrica([/][a-z0-9-]+)?$/.test(ruta)) {
+      if (!fabrica) { titulo = "Factoría"; cuerpo = banner("informacion", "Este panel no tiene <code>config/fabrica.json</code>."); }
+      else {
+        // cada carpeta se lista aparte: si GitHub falla en una, el resto se enseña igual
+        const listados = {}, fallos = [];
+        for (const c of fabrica.directorios ?? []) {
+          try { listados[c.directorio] = await listar(c.directorio, fabrica); } catch (e) { fallos.push(e.message); }
+        }
+        const docs = documentosDeFuente(fabrica, listados), id = ruta.split("/")[2], doc = docs.find((x) => x.id === id);
+        const v = biblioteca({ base: "/fabrica", docs, actual: id, md: doc ? await texto(doc.fichero, fabrica) : "", titulo: fabrica.nombre,
+          fuente: `rama ${fabrica.rama} de ${fabrica.repo}`, etiqueta: `Ficheros de ${fabrica.nombre}`,
+          intro: `Los ficheros de ${fabrica.repo} (rama ${fabrica.rama}), tal cual están en GitHub. Solo lectura.` });
+        if (!v.existe) { res.writeHead(404).end("No existe ese fichero"); return; }
+        [titulo, cuerpo] = [v.titulo, (fallos.length ? banner("aviso", `No se pudo listar una carpeta: ${esc(fallos.join("; "))}`) : "") + v.html];
+        d = { t: Date.now() };
+      }
     } else if (vistas[ruta]) [titulo, cuerpo, d] = await vistas[ruta]();
     else { res.writeHead(404).end("No existe"); return; }
     if (d) cuerpo += nota(`${d.actualizado ? `Fichero del ${esc(d.actualizado)}; ` : ""}leído ${new Date(d.t).toISOString()}`);

@@ -154,7 +154,22 @@ export const SECCIONES = [
     { href: "/entidades", nombre: "Entidades", para: "El mapa de entidades del proyecto y cómo se relacionan." },
     { href: "/diseno", nombre: "Diseño", para: "La biblioteca de diseño: meta-sistema, sistema de HoMenu y su estado." },
   ] },
+  { grupo: "Otros repos", items: [
+    { href: "/fabrica", nombre: "Factoría", para: "Los ficheros de la Factoría (CLAUDE.md, pasos de Pablo, intervenciones, estándares y agentes), tal cual están en GitHub." },
+  ] },
 ];
+
+/**
+ * Documentos de una fuente de solo lectura (config/fabrica.json): los ficheros sueltos y, de cada carpeta, sus .md.
+ * `listados`: {carpeta: [{type, name}] | null}; una carpeta sin listado (GitHub falló) no aporta nada.
+ */
+export function documentosDeFuente(cfg, listados) {
+  const sueltos = (cfg.documentos ?? []).map((d) => ({ ...d }));
+  const deCarpetas = (cfg.directorios ?? []).flatMap((c) => (listados[c.directorio] ?? [])
+    .filter((f) => f.type === "file" && f.name.endsWith(".md"))
+    .map((f) => ({ id: `${c.id}-${f.name.slice(0, -3).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`, titulo: f.name, fichero: `${c.directorio}/${f.name}`, grupo: c.titulo })));
+  return [...sueltos, ...deCarpetas];
+}
 
 const activa = (href, ruta) => ruta === href || ruta.startsWith(`${href}/`);
 

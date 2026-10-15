@@ -240,3 +240,34 @@ test("entidadesDeRegistro traduce el registro en inglés (MenuPlan#566) a lo que
   assert.equal(entidadesDeRegistro({ entidades: [1], relaciones: [] }).entidades[0], 1); // la forma antigua pasa tal cual
   assert.match(entidadesVista(r, "session").html, /Sesión/);
 });
+
+import { biblioteca } from "./markdown.mjs";
+import { documentosDeFuente } from "./lib.mjs";
+test("documentosDeFuente: ficheros sueltos y los .md de cada carpeta, con su grupo e id sin chocar", () => {
+  const cfg = { documentos: [{ id: "claude", titulo: "CLAUDE.md", fichero: "CLAUDE.md" }],
+    directorios: [{ id: "agentes", titulo: "Agentes", directorio: ".claude/agents" }, { id: "estandares", titulo: "Estándares", directorio: "estandares" }] };
+  const listados = { ".claude/agents": [{ type: "file", name: "revisor.md" }, { type: "file", name: "x.json" }, { type: "dir", name: "sub" }], estandares: null };
+  const d = documentosDeFuente(cfg, listados);
+  assert.deepEqual(d.map((x) => x.id), ["claude", "agentes-revisor"]);
+  assert.deepEqual(d[1], { id: "agentes-revisor", titulo: "revisor.md", fichero: ".claude/agents/revisor.md", grupo: "Agentes" });
+  assert.deepEqual(documentosDeFuente({}, {}), []);
+});
+
+test("biblioteca: base propia, grupos en la barra, frontmatter como bloque y la fuente en la nota", () => {
+  const docs = [{ id: "claude", titulo: "CLAUDE.md", fichero: "CLAUDE.md" }, { id: "agentes-revisor", titulo: "revisor.md", fichero: ".claude/agents/revisor.md", grupo: "Agentes" }];
+  const v = biblioteca({ base: "/fabrica", docs, actual: "agentes-revisor", md: md("---", "name: revisor", "---", "", "## Uno"), titulo: "Factoría", fuente: "rama main de o/r", etiqueta: "Ficheros" });
+  assert.ok(v.html.includes('href="/fabrica/claude"') && v.html.includes(">Agentes<") && v.html.includes('href="#uno"'));
+  assert.ok(v.html.includes("<pre") && v.html.includes("name: revisor") && !v.html.includes("<hr>"));
+  assert.ok(v.html.includes("rama main de o/r"));
+  assert.equal(v.titulo, "revisor.md");
+  assert.equal(biblioteca({ base: "/fabrica", docs, actual: "nada", md: "", titulo: "F" }).existe, false);
+  // la de diseño sigue igual: misma ruta y misma nota
+  assert.ok(bibliotecaDiseno(docs, "claude", "").html.includes('href="/diseno/agentes-revisor"') && bibliotecaDiseno(docs, "claude", "").html.includes("rama staging de MenuPlan"));
+});
+
+test("la Factoría está en la navegación y su config no lleva clave ni token", () => {
+  assert.ok(SECCIONES.flatMap((g) => g.items).some((s) => s.href === "/fabrica"));
+  const cfg = JSON.parse(leerFichero(new URL("./config/fabrica.json", import.meta.url), "utf8"));
+  assert.equal(cfg.repo, "factory-am89/fabrica");
+  assert.ok(!/token|clave|secret/i.test(JSON.stringify(cfg)));
+});

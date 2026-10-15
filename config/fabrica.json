@@ -1,0 +1,14 @@
+{
+  "nombre": "Factoría",
+  "repo": "factory-am89/fabrica",
+  "rama": "main",
+  "documentos": [
+    { "id": "claude", "titulo": "CLAUDE.md", "fichero": "CLAUDE.md", "para": "las reglas de cualquier sesión de la Factoría" },
+    { "id": "pasos-pablo", "titulo": "PASOS-PABLO.md", "fichero": "PASOS-PABLO.md", "para": "lo que tiene que hacer Pablo a mano" },
+    { "id": "intervenciones", "titulo": "intervenciones.md", "fichero": "intervenciones.md", "para": "el registro de intervenciones" }
+  ],
+  "directorios": [
+    { "id": "estandares", "titulo": "Estándares", "directorio": "estandares" },
+    { "id": "agentes", "titulo": "Agentes", "directorio": ".claude/agents" }
+  ]
+}
