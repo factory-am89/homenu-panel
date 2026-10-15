@@ -1,7 +1,10 @@
 # Panel en el servidor HoMenu-Panel. Docker se salta ufw: el puerto va atado a la IP de Tailscale.
 services:
   panel:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
     ports:
       - "100.73.252.32:8080:8080"

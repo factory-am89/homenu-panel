@@ -251,6 +251,11 @@ export const servidor = createServer(async (req, res) => {
     });
     return;
   }
+  if (req.method === "GET" && ruta === "/version") {
+    // El SHA con el que se construyó la imagen (build arg GIT_SHA); desplegar.sh espera a verlo para dar el arranque por bueno.
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end(process.env.GIT_SHA || "sin-version");
+    return;
+  }
   try {
     let titulo, cuerpo, d;
     if (ruta === "/") {
