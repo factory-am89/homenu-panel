@@ -1,6 +1,6 @@
 {
   "nombre": "Factoría",
-  "repo": "pabloam89/fabrica",
+  "repo": "factory-am89/fabrica",
   "rama": "main",
   "documentos": [
     { "id": "claude", "titulo": "CLAUDE.md", "fichero": "CLAUDE.md", "para": "las reglas de cualquier sesión de la Factoría" },

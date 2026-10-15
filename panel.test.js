@@ -268,6 +268,6 @@ test("biblioteca: base propia, grupos en la barra, frontmatter como bloque y la 
 test("la Factoría está en la navegación y su config no lleva clave ni token", () => {
   assert.ok(SECCIONES.flatMap((g) => g.items).some((s) => s.href === "/fabrica"));
   const cfg = JSON.parse(leerFichero(new URL("./config/fabrica.json", import.meta.url), "utf8"));
-  assert.equal(cfg.repo, "pabloam89/fabrica");
+  assert.equal(cfg.repo, "factory-am89/fabrica");
   assert.ok(!/token|clave|secret/i.test(JSON.stringify(cfg)));
 });
