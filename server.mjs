@@ -246,6 +246,7 @@ export const servidor = createServer(async (req, res) => {
         if (!v.ok) { res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(v)); return; }
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, dia: guardarInforme(informe) }));
       } catch (e) {
+        console.error("ingest/fabrica: informe rechazado:", e);
         res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" }));
       }
     });

@@ -45,10 +45,10 @@ const esNumero = (v) => typeof v === "number" || (typeof v === "string" && /^-?[
 /** Tabla HTML con las columnas pedidas; todo lo que viene de fuera va escapado. Columnas numéricas a la derecha. */
 export function tabla(lista, columnas, etiqueta) {
   if (!lista.length) return `<p class="vacio">Sin filas todavía.</p>`;
-  const num = new Set(columnas.filter((c) => lista.some((f) => f[c] !== "" && f[c] != null) && lista.every((f) => f[c] === "" || f[c] == null || esNumero(f[c]))));
+  const num = new Set(columnas.filter((c) => lista.some((f) => f[c] !== "" && f[c] !== null && f[c] !== undefined) && lista.every((f) => f[c] === "" || f[c] === null || f[c] === undefined || esNumero(f[c]))));
   const cls = (c) => (num.has(c) ? ' class="num"' : "");
   const cab = columnas.map((c) => `<th scope="col"${cls(c)}>${esc(c.replace(/_/g, " "))}</th>`).join("");
-  const dato = (c, f) => (COLUMNAS_ESTADO.has(c) && f[c] !== "" && f[c] != null ? insignia(celda(f[c])) : esc(celda(f[c])));
+  const dato = (c, f) => (COLUMNAS_ESTADO.has(c) && f[c] !== "" && f[c] !== null && f[c] !== undefined ? insignia(celda(f[c])) : esc(celda(f[c])));
   const cuerpo = lista.map((f) => `<tr>${columnas.map((c) => `<td${cls(c)}>${dato(c, f)}</td>`).join("")}</tr>`).join("");
   return cajaTabla(`<table><thead><tr>${cab}</tr></thead><tbody>${cuerpo}</tbody></table>`, etiqueta);
 }
