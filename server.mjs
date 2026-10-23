@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entidadesDeRegistro } from "./lib.mjs";
 import { biblioteca, bibliotecaDiseno } from "./markdown.mjs";
+import { validarSesiones, vistaCockpit } from "./cockpit.mjs";
 import { banner, caducidad, documentosDeFuente, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
 
 // Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
@@ -19,6 +20,20 @@ export function guardarInforme(informe, dia = diaDe()) {
   writeFileSync(`${destino}.tmp`, JSON.stringify({ recibido: new Date().toISOString(), informe }));
   renameSync(`${destino}.tmp`, destino); // escritura atómica: nunca queda un fichero a medias
   return dia;
+}
+
+// Último envío de sesiones del PC (cliente/enviar-sesiones.mjs): un solo fichero, el último gana.
+const FICHERO_SESIONES = join(DATOS, "sesiones.json");
+
+export function guardarSesiones(sesiones) {
+  mkdirSync(DATOS, { recursive: true });
+  writeFileSync(`${FICHERO_SESIONES}.tmp`, JSON.stringify({ recibido: new Date().toISOString(), sesiones }));
+  renameSync(`${FICHERO_SESIONES}.tmp`, FICHERO_SESIONES);
+}
+
+function leerSesiones() {
+  if (!existsSync(FICHERO_SESIONES)) return null; // aún no ha llegado ninguno
+  return JSON.parse(readFileSync(FICHERO_SESIONES, "utf8")); // si está roto, falla en alto (502 en la página)
 }
 
 function leerInformes() {
@@ -174,7 +189,7 @@ const vistas = {
   },
   "/coste": async () => {
     const lista = leerInformes();
-    if (!lista.length) return ["Coste y tiempo", banner("informacion", "Aún no ha llegado ningún informe. Se envía desde el PC con <code>cliente/enviar-fabrica.mjs</code>."), null];
+    if (!lista.length) return ["Coste y tiempo", banner("informacion", "Aún no ha llegado ningún informe. El envío que lo mandaba (<code>cliente/enviar-fabrica.mjs</code>) se quitó y no tiene sustituto todavía."), null];
     const u = lista[0].informe, s = u.sinIssue;
     const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
     const dia = tabla(lista.map((x) => ({ dia: x.dia, sesiones: x.informe.cobertura.sesiones, horas: num(x.informe.sinIssue.minutos / 60),
@@ -252,9 +267,31 @@ export const servidor = createServer(async (req, res) => {
     });
     return;
   }
+  if (req.method === "POST" && ruta === "/ingest/sesiones") {
+    let cuerpo = "", demasiado = false;
+    req.on("data", (c) => { cuerpo += c; if (cuerpo.length > MAX_BYTES) { demasiado = true; req.destroy(); } });
+    req.on("end", () => {
+      if (demasiado) return;
+      let v;
+      try { v = validarSesiones(JSON.parse(cuerpo)); }
+      catch { res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" })); return; }
+      if (!v.ok) { res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(v)); return; }
+      try {
+        guardarSesiones(v.sesiones);
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, sesiones: v.sesiones.length }));
+      } catch (e) {
+        console.error("ingest/sesiones: no pude guardar:", e);
+        res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "no se pudo guardar" }));
+      }
+    });
+    return;
+  }
   try {
     let titulo, cuerpo, d;
-    if (ruta === "/") {
+    if (ruta === "/cockpit") {
+      titulo = "Cockpit";
+      cuerpo = vistaCockpit(leerSesiones());
+    } else if (ruta === "/") {
       titulo = "Inicio";
       cuerpo = portada(config.repo, config.rama);
     } else if (/^[/]entidades([/][a-z0-9-]+)?$/.test(ruta)) {

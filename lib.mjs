@@ -19,6 +19,7 @@ export const cajaTabla = (html, etiqueta = "Tabla de datos") =>
 const VARIANTE = {
   abierto: "informacion", cerrado: "exito", ok: "exito", falla: "error", si: "exito", no: "error", true: "exito", false: "error",
   con_registro: "exito", parcial: "aviso", sin_registro: "informacion",
+  activa: "exito", "sin señal": "error", // sesiones del cockpit (cockpit.mjs)
 };
 const COLUMNAS_ESTADO = new Set(["estado", "aguanto", "registro"]);
 
@@ -149,6 +150,7 @@ export const SECCIONES = [
     { href: "/fondos", nombre: "Fondos", para: "Los problemas de fondo con los encargos y casos que cuelgan de ellos, y su coste." },
     { href: "/issues", nombre: "Issues", para: "Fondos, casos, encargos y decisiones, abiertos y cerrados." },
     { href: "/coste", nombre: "Coste", para: "Horas, tokens y dólares estimados por encargo y por día." },
+    { href: "/cockpit", nombre: "Cockpit", para: "Las sesiones abiertas en el PC y si siguen dando señal." },
   ] },
   { grupo: "Mapa", items: [
     { href: "/entidades", nombre: "Entidades", para: "El mapa de entidades del proyecto y cómo se relacionan." },
