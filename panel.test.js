@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { caducidad, contar, esc, filaIssue, filas, frontmatter, tabla, tablaMarkdown } from "./lib.mjs";
+import { caducidad, contar, filaIssue, frontmatter, tabla, tablaMarkdown } from "./lib.mjs";
 
 test("frontmatter lee claves, comillas y el bloque metadata", () => {
   const f = frontmatter('---\nname: hetzner\ndescription: Úsala al: tocar\nmetadata:\n  tipo: servicio\n  comprobado: "2026-10-09"\n---\n# x');
