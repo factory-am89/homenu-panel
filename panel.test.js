@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { caducidad, contar, filaIssue, frontmatter, tabla, tablaMarkdown } from "./lib.mjs";
+import { caducidad, contar, esc, filaIssue, filas, frontmatter, tabla, tablaMarkdown } from "./lib.mjs";
 
 test("frontmatter lee claves, comillas y el bloque metadata", () => {
   const f = frontmatter('---\nname: hetzner\ndescription: Úsala al: tocar\nmetadata:\n  tipo: servicio\n  comprobado: "2026-10-09"\n---\n# x');
@@ -15,6 +15,17 @@ test("tablaMarkdown saca las filas de la tabla tras el encabezado", () => {
 test("caducidad: 90 días desde la comprobación", () => {
   assert.deepEqual(caducidad("2026-10-09", new Date("2026-10-10T00:00:00Z")), { caduca: "2027-01-07", dias: 89 });
   assert.deepEqual(caducidad("", new Date()), { caduca: "", dias: "" });
+});
+
+test("esc escapa el HTML que llega de fuera", () => {
+  assert.equal(esc(`<b a="1">&'`), "&lt;b a=&quot;1&quot;&gt;&amp;&#39;");
+});
+test("tabla no deja pasar HTML de los datos", () => {
+  assert.ok(!tabla([{ x: "<script>" }], ["x"]).includes("<script>"));
+});
+test("filas acepta lista y objeto", () => {
+  assert.equal(filas([{ termino: "a" }])[0].id, "a");
+  assert.equal(filas({ b: { y: 1 } })[0].id, "b");
 });
 
 const issue = {
