@@ -4,8 +4,10 @@ import { execFile } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { insignia } from "./lib.mjs";
+import { crearServidor } from "./server.mjs";
 import { promisify } from "node:util";
-import { PC_CALLADO_MIN, SIN_SENAL_MIN, estadoDe, validarSesiones, vistaCockpit } from "./cockpit.mjs";
+import { ESTADOS, PC_CALLADO_MIN, SIN_SENAL_MIN, estadoDe, validarSesiones, vistaCockpit } from "./cockpit.mjs";
 
 const correr = promisify(execFile);
 const AHORA = Date.parse("2026-10-23T12:00:00Z");
@@ -57,42 +59,66 @@ test("vistaCockpit: con el PC al día, activa y sin señal según el silencio; e
   assert.ok(!html.includes("<b>") && html.includes("fix/&lt;b&gt;"));
 });
 
+test("ESTADOS es la única lista: estadoDe solo devuelve sus claves y cada insignia sale con su tono, no neutra", () => {
+  const vistos = new Set([estadoDe(sesion("abcdef-1", "a", 0), AHORA, false).estado, estadoDe(sesion("abcdef-1", "a", 99), AHORA, false).estado, estadoDe(sesion("abcdef-1", "a", 0), AHORA, true).estado]);
+  assert.deepEqual([...vistos].sort(), Object.keys(ESTADOS).sort());
+  const html = vistaCockpit({ recibido: hace(0), sesiones: [sesion("abcdef-1", "a", 0), sesion("abcdef-2", "b", 99)] }, AHORA);
+  for (const [estado, tono] of Object.entries(ESTADOS)) assert.ok(html.includes(`class="insignia i-${tono}">${estado}<`), estado);
+  assert.ok(insignia("activa").includes("i-neutro"), "lib.mjs no guarda copia de los estados del cockpit");
+});
+
 // ---- El circuito entero: el envío real contra el servidor real, con una Fábrica falsa ----
-process.env.DATOS = mkdtempSync(join(tmpdir(), "panel-cockpit-"));
-const { servidor } = await import("./server.mjs");
-await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
-const base = `http://127.0.0.1:${servidor.address().port}`;
-test.after(() => servidor.close());
-
+// Cada test levanta su servidor con su carpeta de datos y su hora fija: ninguno depende de otro ni del reloj.
 const FABRICA_FALSA = join(import.meta.dirname, "fixtures", "fabrica-falsa");
-const enviar = (env = {}) => correr(process.execPath, [join(import.meta.dirname, "cliente", "enviar-sesiones.mjs"), "--fabrica", FABRICA_FALSA, "--url", base],
-  { env: { ...process.env, ...env } });
+const ENVIAR = join(import.meta.dirname, "cliente", "enviar-sesiones.mjs");
 
-test("circuito: /cockpit antes de cualquier envío dice que no hay datos", async () => {
+async function conPanel(prueba, reloj = () => AHORA) {
+  const servidor = crearServidor({ datos: mkdtempSync(join(tmpdir(), "panel-cockpit-")), reloj });
+  await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
+  const base = `http://127.0.0.1:${servidor.address().port}`;
+  const enviar = (env = {}, url = base) => correr(process.execPath, [ENVIAR, "--fabrica", FABRICA_FALSA, "--url", url],
+    { env: { ...process.env, FABRICA_FALSA_AHORA: String(AHORA), ...env } });
+  try { await prueba({ base, enviar }); } finally { servidor.close(); }
+}
+
+test("circuito: /cockpit antes de cualquier envío dice que no hay datos", () => conPanel(async ({ base }) => {
   const r = await fetch(`${base}/cockpit`);
   assert.equal(r.status, 200);
   assert.match(await r.text(), /ningún envío/);
-});
+}));
 
-test("circuito: el envío real llega, sale 0 y /cockpit enseña las dos sesiones, una activa y otra sin señal", async () => {
+test("circuito: el envío real llega, sale 0 y /cockpit enseña las dos sesiones, una activa y otra sin señal", () => conPanel(async ({ base, enviar }) => {
   const { stdout } = await enviar();
   assert.match(stdout, /resultado: ok estado: 200/);
   const html = await (await fetch(`${base}/cockpit`)).text();
   assert.match(html, /data-sesion="sesion-viva-1" data-estado="activa"/);
   assert.match(html, /data-sesion="sesion-callada-2" data-estado="sin señal"/);
+  assert.doesNotMatch(html, /Sin noticias del PC/);
   assert.ok(!html.includes("C:\\dev"), "la carpeta del PC no se enseña");
+}));
+
+test("circuito: el mismo envío visto 10 min después, con el PC callado, sale todo sin señal", async () => {
+  let ahora = AHORA;
+  await conPanel(async ({ base, enviar }) => {
+    await enviar();
+    ahora = AHORA + 10 * 60_000;
+    const html = await (await fetch(`${base}/cockpit`)).text();
+    assert.match(html, /Sin noticias del PC desde las 14:00 \(Madrid\)/);
+    assert.doesNotMatch(html, /data-estado="activa"/);
+  }, () => ahora);
 });
 
-test("circuito: si la Fábrica falla, el envío sale distinto de 0 y no manda nada", async () => {
+test("circuito: si la Fábrica falla, el envío sale distinto de 0 y no manda nada", () => conPanel(async ({ base, enviar }) => {
   await assert.rejects(enviar({ FABRICA_FALSA_FALLA: "1" }), (e) => e.code === 3 && /no pude leer las sesiones/.test(e.stderr));
-});
+  assert.match(await (await fetch(`${base}/cockpit`)).text(), /ningún envío/);
+}));
 
-test("circuito: si el panel no contesta, el envío sale distinto de 0", async () => {
-  await assert.rejects(correr(process.execPath, [join(import.meta.dirname, "cliente", "enviar-sesiones.mjs"), "--fabrica", FABRICA_FALSA, "--url", "http://127.0.0.1:1"]), (e) => e.code === 4);
-});
+test("circuito: si el panel no contesta, el envío sale distinto de 0", () => conPanel(async ({ enviar }) => {
+  await assert.rejects(enviar({}, "http://127.0.0.1:1"), (e) => e.code === 4);
+}));
 
-test("circuito: el servidor rechaza con 422 una forma que no encaja y con 400 lo que no es JSON", async () => {
+test("circuito: el servidor rechaza con 422 una forma que no encaja y con 400 lo que no es JSON", () => conPanel(async ({ base }) => {
   const post = (cuerpo) => fetch(`${base}/ingest/sesiones`, { method: "POST", body: cuerpo });
   assert.equal((await post(JSON.stringify({ sesiones: "x" }))).status, 422);
   assert.equal((await post("no es json")).status, 400);
-});
+}));

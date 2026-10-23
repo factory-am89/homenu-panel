@@ -3,10 +3,16 @@
 import { banner, esc, insignia, nota } from "./lib.mjs";
 
 // Una sesión que lleva más de esto sin ficha nueva sale «sin señal». 15 min: el p99,9 de los huecos de una sesión viva
-// medido en transcripts de la Fábrica y de MenuPlan fue 9,7 min (35 393 huecos).
+// medido en transcripts de la Fábrica y de MenuPlan fue 9,70 min sobre 35 463 huecos (36 transcripts de 2 carpetas, 17 huecos de
+// más de 15 min, sin comprobar que sean esperas de permiso). Medición: scripts de la sesión del plan (huecos-todos.mjs); la cifra
+// crece con cada sesión nueva y no es reproducible desde este repo.
 export const SIN_SENAL_MIN = 15;
-// Si el último envío del PC tiene más de esto, no se fía de ninguna sesión: la tarea del PC corre cada minuto.
+// Si el último envío del PC tiene más de esto, no se fía de ninguna sesión: se supone una tarea del PC que enviará cada minuto (trozo 2, aún no instalada), con 2 min de margen.
 export const PC_CALLADO_MIN = 3;
+
+// Los estados que enseña la página y el tono de cada uno: la única lista (estadoDe solo devuelve estas claves).
+export const ESTADOS = { activa: "exito", "sin señal": "error" };
+const [ACTIVA, SIN_SENAL] = Object.keys(ESTADOS);
 
 const FORMA_ID = /^[\w-]{6,80}$/;
 const FORMA_RAMA = /^[\w./-]{1,100}$/;
@@ -35,10 +41,10 @@ const hhmmMadrid = (ms) => new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/
 
 /** Estado de una sesión: «activa» o «sin señal» (con su motivo). `pcCallado` manda sobre la hora de la ficha. */
 export function estadoDe(sesion, ahora, pcCallado) {
-  if (pcCallado) return { estado: "sin señal", motivo: "el PC no envía" };
+  if (pcCallado) return { estado: SIN_SENAL, motivo: "el PC no envía" };
   const min = minutosDesde(sesion.ultima, ahora);
-  if (min > SIN_SENAL_MIN) return { estado: "sin señal", motivo: "puede estar esperándote" };
-  return { estado: "activa", motivo: "" };
+  if (min > SIN_SENAL_MIN) return { estado: SIN_SENAL, motivo: "puede estar esperándote" };
+  return { estado: ACTIVA, motivo: "" };
 }
 
 /**
@@ -54,7 +60,7 @@ export function vistaCockpit(envio, ahora = Date.now()) {
   const tarjetas = envio.sesiones.map((s) => {
     const e = estadoDe(s, ahora, pcCallado);
     const min = minutosDesde(s.ultima, ahora);
-    return `<li data-sesion="${esc(s.id)}" data-estado="${esc(e.estado)}"><strong>${esc(s.rama)}</strong> ${insignia(e.estado)}`
+    return `<li data-sesion="${esc(s.id)}" data-estado="${esc(e.estado)}"><strong>${esc(s.rama)}</strong> ${insignia(e.estado, ESTADOS[e.estado])}`
       + ` <span>última actividad hace ${min} min${e.motivo ? ` (${esc(e.motivo)})` : ""}</span></li>`;
   }).join("");
   return `${aviso}<ul>${tarjetas}</ul>${nota(`Último envío hace ${edad} min. «Sin señal» = más de ${SIN_SENAL_MIN} min sin actividad (con los datos de hoy no se distingue una sesión caída de una que te espera).`)}`;

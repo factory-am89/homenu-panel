@@ -1,46 +1,30 @@
 // Panel de la factoría, versión 0: lee de GitHub los ficheros que dice config/<proyecto>.json
 // y los enseña. Sin claves (repos públicos), sin dependencias, sin base de datos todavía.
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entidadesDeRegistro } from "./lib.mjs";
 import { biblioteca, bibliotecaDiseno } from "./markdown.mjs";
 import { validarSesiones, vistaCockpit } from "./cockpit.mjs";
-import { banner, caducidad, documentosDeFuente, contar, diaDe, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, porFondo, tabla, tablaMarkdown, tarjetas, validarInforme } from "./lib.mjs";
+import { banner, caducidad, documentosDeFuente, contar, esc, entidadesVista, filaIssue, filas, frontmatter, nota, pagina, pasosTexto, portada, tabla, tablaMarkdown, tarjetas } from "./lib.mjs";
 
-// Informes que envía el PC de Pablo (npm run fabrica -- --json): uno por día, el último del día gana.
 const DATOS = process.env.DATOS ?? resolve(fileURLToPath(import.meta.url), "..", "datos");
-const CARPETA_FABRICA = join(DATOS, "fabrica");
 const MAX_BYTES = 200_000;
 
-export function guardarInforme(informe, dia = diaDe()) {
-  mkdirSync(CARPETA_FABRICA, { recursive: true });
-  const destino = join(CARPETA_FABRICA, `${dia}.json`);
-  writeFileSync(`${destino}.tmp`, JSON.stringify({ recibido: new Date().toISOString(), informe }));
-  renameSync(`${destino}.tmp`, destino); // escritura atómica: nunca queda un fichero a medias
-  return dia;
-}
-
 // Último envío de sesiones del PC (cliente/enviar-sesiones.mjs): un solo fichero, el último gana.
-const FICHERO_SESIONES = join(DATOS, "sesiones.json");
+const ficheroSesiones = (datos) => join(datos, "sesiones.json");
 
-export function guardarSesiones(sesiones) {
-  mkdirSync(DATOS, { recursive: true });
-  writeFileSync(`${FICHERO_SESIONES}.tmp`, JSON.stringify({ recibido: new Date().toISOString(), sesiones }));
-  renameSync(`${FICHERO_SESIONES}.tmp`, FICHERO_SESIONES);
+export function guardarSesiones(sesiones, { datos = DATOS, ahora = Date.now() } = {}) {
+  mkdirSync(datos, { recursive: true });
+  const destino = ficheroSesiones(datos);
+  writeFileSync(`${destino}.tmp`, JSON.stringify({ recibido: new Date(ahora).toISOString(), sesiones }));
+  renameSync(`${destino}.tmp`, destino); // escritura atómica: nunca queda un fichero a medias
 }
 
-function leerSesiones() {
-  if (!existsSync(FICHERO_SESIONES)) return null; // aún no ha llegado ninguno
-  return JSON.parse(readFileSync(FICHERO_SESIONES, "utf8")); // si está roto, falla en alto (502 en la página)
-}
-
-function leerInformes() {
-  try {
-    return readdirSync(CARPETA_FABRICA).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse()
-      .map((f) => ({ dia: f.slice(0, 10), ...JSON.parse(readFileSync(join(CARPETA_FABRICA, f), "utf8")) }));
-  } catch { return []; } // sin carpeta todavía: aún no ha llegado ninguno
+function leerSesiones(datos) {
+  if (!existsSync(ficheroSesiones(datos))) return null; // aún no ha llegado ninguno
+  return JSON.parse(readFileSync(ficheroSesiones(datos), "utf8")); // si está roto, falla en alto (502 en la página)
 }
 
 const config = JSON.parse(readFileSync(new URL(`./config/${process.env.PROYECTO ?? "menuplan"}.json`, import.meta.url), "utf8"));
@@ -166,57 +150,6 @@ const vistas = {
     const aviso = nota(`Sale de la tabla «${esc(o.encabezado)}» de <code>${esc(o.fichero)}</code> (aún no hay fichero de datos). Para fallos, /orquestar usa antes el presupuesto por alcance y causa (<code>ops/presupuestos.json</code>).`);
     return ["Tipos de encargo y su pipeline", `${aviso}${tabla(filasPipe, Object.keys(filasPipe[0] ?? { Acción: 1, Pipeline: 1 }))}`, { t: Date.now() }];
   },
-  "/fondos": async () => {
-    const d = await leerIssues();
-    const lista = leerInformes();
-    const medidos = lista[0]?.informe.encargos ?? [];
-    const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
-    const base = porFondo(d.lista, medidos);
-    const resumen = tarjetas([
-      { etiqueta: "Fondos", valor: base.length, detalle: `${base.filter((x) => x.estado === "abierto").length} abiertos` },
-      { etiqueta: "Encargos abiertos", valor: base.reduce((t, x) => t + x.encargos_abiertos, 0), detalle: `de ${base.reduce((t, x) => t + x.encargos, 0)}` },
-      { etiqueta: "Casos", valor: base.reduce((t, x) => t + x.casos, 0) },
-      { etiqueta: "Horas medidas", valor: num(base.reduce((t, x) => t + x.horas, 0)) },
-      { etiqueta: "Coste USD estimado", valor: num(base.reduce((t, x) => t + x.coste_usd, 0)) },
-    ]);
-    const f = base.map((x) => ({
-      fondo: `#${x.n}`, titulo: x.titulo, estado: x.estado, causa: x.causa, encargos: `${x.encargos - x.encargos_abiertos}/${x.encargos} cerrados`,
-      casos: x.casos, medidos: x.medidos, horas: x.medidos ? num(x.horas) : "", coste_usd_estimado: x.medidos ? num(x.coste_usd) : "",
-    }));
-    const aviso = d.error ? banner("aviso", `Datos viejos: ${esc(d.error)}`) : "";
-    const explica = nota(`Cada fondo con los encargos y casos que cuelgan de él (bloque <code>fondo:</code>). Horas y coste solo de los encargos medidos en el último informe de fabrica; mayor coste primero.`);
-    return ["Fondos y sus encargos", `${aviso}${resumen}${explica}${tabla(f, ["fondo", "titulo", "estado", "causa", "encargos", "casos", "medidos", "horas", "coste_usd_estimado"])}`, d];
-  },
-  "/coste": async () => {
-    const lista = leerInformes();
-    if (!lista.length) return ["Coste y tiempo", banner("informacion", "Aún no ha llegado ningún informe. El envío que lo mandaba (<code>cliente/enviar-fabrica.mjs</code>) se quitó y no tiene sustituto todavía."), null];
-    const u = lista[0].informe, s = u.sinIssue;
-    const num = (n) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(n);
-    const dia = tabla(lista.map((x) => ({ dia: x.dia, sesiones: x.informe.cobertura.sesiones, horas: num(x.informe.sinIssue.minutos / 60),
-      tokens_millones: num(x.informe.sinIssue.tokens.total / 1e6), coste_usd_estimado: num(x.informe.sinIssue.coste_usd) })),
-    ["dia", "sesiones", "horas", "tokens_millones", "coste_usd_estimado"]);
-    const bloqueos = Object.entries(u.eventos.por_evento.bloqueo_guardia?.nombres ?? {}).sort((a, b) => b[1] - a[1]).map(([motivo, veces]) => ({ motivo, veces }));
-    const agentes = Object.entries(s.agentes ?? {}).sort((a, b) => b[1] - a[1]).map(([agente, lanzamientos]) => ({ agente, lanzamientos }));
-    const titulos = new Map();
-    try { for (const x of (await leerIssues()).lista) titulos.set(x.n, x.titulo); } catch { /* sin títulos, solo números */ }
-    const encargos = (u.encargos ?? []).slice().sort((a, b) => b.coste_usd - a.coste_usd).map((e) => ({
-      issue: `#${e.issue}`, titulo: titulos.get(e.issue) ?? "", fondo: e.fondo ? `#${e.fondo}` : "", horas: num(e.minutos / 60),
-      tokens_millones: num(e.tokens.total / 1e6), coste_usd_estimado: num(e.coste_usd), sesiones: e.sesiones, rondas: e.rondas ?? "", aguanto: e.aguanto ?? "",
-    }));
-    const procedencia = u.datos_github === "fresco" ? "datos de GitHub al día"
-      : u.datos_github === "sin-github" ? "enviado sin unir con los issues" : "";
-    const deCache = u.datos_github?.startsWith("cache");
-    const aviso = nota(`El coste es una estimación a precios de la API (ops/precios-modelos.json), no lo que se paga. Encargos medidos: ${u.cobertura.encargos_medidos ?? 0}${procedencia && !deCache ? ` · ${procedencia}` : ""}.`) + (deCache ? banner("aviso", `Los datos de GitHub vienen de una caché (${esc(u.datos_github)}).`) : "");
-    const resumen = tarjetas([
-      { etiqueta: "Sesiones", valor: u.cobertura.sesiones }, { etiqueta: "Horas", valor: num(s.minutos / 60) },
-      { etiqueta: "Tokens (millones)", valor: num(s.tokens.total / 1e6) }, { etiqueta: "Coste USD estimado", valor: num(s.coste_usd) },
-      { etiqueta: "Encargos medidos", valor: u.cobertura.encargos_medidos ?? 0 },
-    ]);
-    const porEncargo = encargos.length
-      ? `<h2>Por encargo (mayor coste primero)</h2>${tabla(encargos, ["issue", "titulo", "fondo", "horas", "tokens_millones", "coste_usd_estimado", "sesiones", "rondas", "aguanto"])}`
-      : `<h2>Por encargo</h2><p>Este informe no trae encargos medidos.</p>`;
-    return ["Coste y tiempo", `${aviso}${resumen}${porEncargo}<h2>Total por día (acumulado hasta ese día)</h2>${dia}<h2>Bloqueos de la guardia (último informe)</h2>${tabla(bloqueos, ["motivo", "veces"])}<h2>Agentes lanzados</h2>${tabla(agentes, ["agente", "lanzamientos"])}`, { t: Date.parse(lista[0].recibido), actualizado: lista[0].dia }];
-  },
   "/issues": async () => {
     const d = await leerIssues();
     const cuenta = contar(d.lista, "tipo", "estado");
@@ -247,26 +180,9 @@ const vistas = {
   },
 };
 
-export const servidor = createServer(async (req, res) => {
+// `datos` (carpeta donde se guarda) y `reloj` (la hora, en ms) entran como parámetros para que un test tenga la suya.
+export const crearServidor = ({ datos = DATOS, reloj = Date.now } = {}) => createServer(async (req, res) => {
   const ruta = new URL(req.url, "http://x").pathname;
-  if (req.method === "POST" && ruta === "/ingest/fabrica") {
-    // Solo llega por la red privada (el puerto va atado a la IP de Tailscale). Aun así se valida la forma y el tamaño.
-    let cuerpo = "", demasiado = false;
-    req.on("data", (c) => { cuerpo += c; if (cuerpo.length > MAX_BYTES) { demasiado = true; req.destroy(); } });
-    req.on("end", () => {
-      if (demasiado) return;
-      try {
-        const informe = JSON.parse(cuerpo);
-        const v = validarInforme(informe);
-        if (!v.ok) { res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(v)); return; }
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, dia: guardarInforme(informe) }));
-      } catch (e) {
-        console.error("ingest/fabrica: informe rechazado:", e);
-        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" }));
-      }
-    });
-    return;
-  }
   if (req.method === "POST" && ruta === "/ingest/sesiones") {
     let cuerpo = "", demasiado = false;
     req.on("data", (c) => { cuerpo += c; if (cuerpo.length > MAX_BYTES) { demasiado = true; req.destroy(); } });
@@ -277,7 +193,7 @@ export const servidor = createServer(async (req, res) => {
       catch { res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "JSON no válido" })); return; }
       if (!v.ok) { res.writeHead(422, { "content-type": "application/json" }).end(JSON.stringify(v)); return; }
       try {
-        guardarSesiones(v.sesiones);
+        guardarSesiones(v.sesiones, { datos, ahora: reloj() });
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, sesiones: v.sesiones.length }));
       } catch (e) {
         console.error("ingest/sesiones: no pude guardar:", e);
@@ -290,7 +206,7 @@ export const servidor = createServer(async (req, res) => {
     let titulo, cuerpo, d;
     if (ruta === "/cockpit") {
       titulo = "Cockpit";
-      cuerpo = vistaCockpit(leerSesiones());
+      cuerpo = vistaCockpit(leerSesiones(datos), reloj());
     } else if (ruta === "/") {
       titulo = "Inicio";
       cuerpo = portada(config.repo, config.rama);
@@ -335,6 +251,8 @@ export const servidor = createServer(async (req, res) => {
     res.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end(`Error leyendo la fuente: ${e.message}`);
   }
 });
+
+export const servidor = crearServidor();
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   servidor.listen(Number(process.env.PORT ?? 8080), process.env.HOST ?? "127.0.0.1", () => console.log("panel escuchando"));

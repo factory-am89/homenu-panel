@@ -19,14 +19,13 @@ export const cajaTabla = (html, etiqueta = "Tabla de datos") =>
 const VARIANTE = {
   abierto: "informacion", cerrado: "exito", ok: "exito", falla: "error", si: "exito", no: "error", true: "exito", false: "error",
   con_registro: "exito", parcial: "aviso", sin_registro: "informacion",
-  activa: "exito", "sin señal": "error", // sesiones del cockpit (cockpit.mjs)
 };
 const COLUMNAS_ESTADO = new Set(["estado", "aguanto", "registro"]);
 
-/** Insignia de estado: texto siempre; el color es un refuerzo (WCAG 1.4.1). */
-export const insignia = (valor) => {
+/** Insignia de estado: texto siempre; el color es un refuerzo (WCAG 1.4.1). `variante` fuerza el tono cuando quien llama tiene su propia lista cerrada (cockpit.mjs). */
+export const insignia = (valor, variante) => {
   const v = String(valor ?? "");
-  return `<span class="insignia i-${VARIANTE[v.toLowerCase()] ?? "neutro"}">${esc(v)}</span>`;
+  return `<span class="insignia i-${variante ?? VARIANTE[v.toLowerCase()] ?? "neutro"}">${esc(v)}</span>`;
 };
 
 /** Aviso con variante (exito, aviso, error, informacion); la etiqueta evita que el color sea la única señal. */
@@ -118,25 +117,6 @@ export function caducidad(comprobado, hoy = new Date()) {
   return { caduca: caduca.toISOString().slice(0, 10), dias: Math.ceil((caduca - hoy) / 86_400_000) };
 }
 
-const esNum = (v) => typeof v === "number" && Number.isFinite(v);
-
-/**
- * ¿Es un informe de `npm run fabrica -- --json`? Solo se acepta la forma que el panel sabe pintar:
- * agregados numéricos. Lo demás se rechaza con el motivo (nunca se guarda tal cual lo que llega).
- */
-export function validarInforme(x) {
-  if (!x || typeof x !== "object" || Array.isArray(x)) return { ok: false, error: "no es un objeto" };
-  if (!x.cobertura || !esNum(x.cobertura.sesiones)) return { ok: false, error: "falta cobertura.sesiones" };
-  if (!x.eventos || !esNum(x.eventos.total) || typeof x.eventos.por_evento !== "object") return { ok: false, error: "falta eventos" };
-  const s = x.sinIssue;
-  if (!s || !esNum(s.minutos) || !esNum(s.coste_usd) || !s.tokens || !esNum(s.tokens.total)) return { ok: false, error: "falta sinIssue (minutos, coste_usd, tokens)" };
-  return { ok: true };
-}
-
-/** Del informe, lo que se guarda: el propio informe más el día (Madrid) al que pertenece. */
-export const diaDe = (fecha = new Date()) =>
-  new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Madrid" }).format(fecha);
-
 // Secciones del panel, agrupadas. Una sola lista: la navegación y la portada salen de aquí.
 export const SECCIONES = [
   { grupo: "Conocimiento", items: [
@@ -147,9 +127,7 @@ export const SECCIONES = [
     { href: "/encargos", nombre: "Tipos de encargo", para: "El pipeline de agentes que sigue cada tipo de encargo." },
   ] },
   { grupo: "Trabajo", items: [
-    { href: "/fondos", nombre: "Fondos", para: "Los problemas de fondo con los encargos y casos que cuelgan de ellos, y su coste." },
     { href: "/issues", nombre: "Issues", para: "Fondos, casos, encargos y decisiones, abiertos y cerrados." },
-    { href: "/coste", nombre: "Coste", para: "Horas, tokens y dólares estimados por encargo y por día." },
     { href: "/cockpit", nombre: "Cockpit", para: "Las sesiones abiertas en el PC y si siguen dando señal." },
   ] },
   { grupo: "Mapa", items: [
@@ -204,7 +182,7 @@ ${cuerpo}
 
 /** Portada: qué es el panel y una tarjeta con enlace por sección. */
 export function portada(repo, rama) {
-  const intro = nota(`Panel de la factoría: enseña, en solo lectura, cómo trabaja el proyecto. Lee <code>${esc(repo)}</code> (rama ${esc(rama)}) en GitHub y los informes de coste que envía el PC de Pablo. Cada sección dice de qué fichero sale.`);
+  const intro = nota(`Panel de la factoría: enseña, en solo lectura, cómo trabaja el proyecto. Lee <code>${esc(repo)}</code> (rama ${esc(rama)}) en GitHub y las sesiones que envía el PC de Pablo. Cada sección dice de qué fichero sale.`);
   const grupos = SECCIONES.map((g) => `<h2>${esc(g.grupo)}</h2><ul class="portada">${g.items.map((s) =>
     `<li><a href="${s.href}"><strong>${esc(s.nombre)}</strong><span>${esc(s.para)}</span></a></li>`).join("")}</ul>`).join("");
   return `${intro}${grupos}`;
@@ -217,26 +195,6 @@ export function pasosTexto(tipo) {
     const op = (p.opcional ?? []).map((o) => `[${o.agente} si ${o.si}]`).join(" ");
     return [ag, op].filter(Boolean).join(" ") + (p.nota ? ` (${p.nota})` : "");
   }).join(" → ") + (tipo.cierra_con ? ` → ${tipo.cierra_con}` : "");
-}
-
-// Cruza los fondos con sus encargos y casos (issues) y con lo medido por encargo (informe de fabrica).
-// medidos: [{issue, minutos, coste_usd}]. Devuelve una fila por fondo, el de más coste primero.
-export function porFondo(issues, medidos = []) {
-  const m = new Map(medidos.map((e) => [e.issue, e]));
-  const fondos = issues.filter((x) => x.tipo === "fondo");
-  return fondos.map((f) => {
-    const hijos = issues.filter((x) => x.fondo === String(f.n) && x.n !== f.n);
-    const encargos = hijos.filter((x) => x.tipo === "encargo");
-    const casos = hijos.filter((x) => x.tipo === "caso");
-    const medidosDelFondo = encargos.map((x) => m.get(x.n)).filter(Boolean);
-    return {
-      n: f.n, titulo: f.titulo, estado: f.estado, causa: f.causa,
-      encargos: encargos.length, encargos_abiertos: encargos.filter((x) => x.estado === "abierto").length,
-      casos: casos.length, medidos: medidosDelFondo.length,
-      horas: medidosDelFondo.reduce((s, e) => s + e.minutos, 0) / 60,
-      coste_usd: medidosDelFondo.reduce((s, e) => s + e.coste_usd, 0),
-    };
-  }).sort((a, b) => b.coste_usd - a.coste_usd || b.encargos - a.encargos);
 }
 
 const EJES = [["puente", "Puentes"], ["horizontal", "Cómo trabajamos"], ["vertical", "El producto"]];
