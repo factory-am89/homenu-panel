@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { caducidad, contar, diaDe, esc, filaIssue, filas, frontmatter, tabla, tablaMarkdown, validarInforme } from "./lib.mjs";
+import { caducidad, contar, esc, filaIssue, filas, frontmatter, tabla, tablaMarkdown } from "./lib.mjs";
 
 test("frontmatter lee claves, comillas y el bloque metadata", () => {
   const f = frontmatter('---\nname: hetzner\ndescription: Úsala al: tocar\nmetadata:\n  tipo: servicio\n  comprobado: "2026-10-09"\n---\n# x');
@@ -15,21 +15,6 @@ test("tablaMarkdown saca las filas de la tabla tras el encabezado", () => {
 test("caducidad: 90 días desde la comprobación", () => {
   assert.deepEqual(caducidad("2026-10-09", new Date("2026-10-10T00:00:00Z")), { caduca: "2027-01-07", dias: 89 });
   assert.deepEqual(caducidad("", new Date()), { caduca: "", dias: "" });
-});
-
-const informe = {
-  cobertura: { sesiones: 3 }, eventos: { total: 2, por_evento: { bloqueo_guardia: { total: 2, nombres: { stash: 2 } } } },
-  sinIssue: { minutos: 90.5, coste_usd: 12.3, tokens: { total: 1000 }, agentes: { revisor: 4 } },
-};
-test("validarInforme acepta un informe de fabrica y rechaza lo demás", () => {
-  assert.equal(validarInforme(informe).ok, true);
-  assert.equal(validarInforme(null).ok, false);
-  assert.equal(validarInforme([]).ok, false);
-  assert.match(validarInforme({ ...informe, sinIssue: { minutos: "9" } }).error, /sinIssue/);
-  assert.match(validarInforme({ ...informe, cobertura: {} }).error, /cobertura/);
-});
-test("diaDe da el día de Madrid, no el de UTC", () => {
-  assert.equal(diaDe(new Date("2026-10-10T22:30:00Z")), "2026-10-11"); // 00:30 en Madrid
 });
 
 test("esc escapa el HTML que llega de fuera", () => {
@@ -61,24 +46,11 @@ test("contar agrupa por dos claves", () => {
   assert.deepEqual(r, { caso: { abierto: 2 }, "(sin)": { cerrado: 1 } });
 });
 
-import { pasosTexto, porFondo } from "./lib.mjs";
+import { pasosTexto } from "./lib.mjs";
 test("pasosTexto une pasos, paralelos, opcionales y cierre", () => {
   const t = { pasos: [{ agentes: ["lola"] }, { agentes: ["evaluador", "revisor"] }, { opcional: [{ agente: "seguridad", si: "escribe datos" }] }], cierra_con: "OK" };
   assert.equal(pasosTexto(t), "lola → evaluador + revisor → [seguridad si escribe datos] → OK");
 });
-test("porFondo cuenta encargos y casos de cada fondo y suma lo medido", () => {
-  const is = [
-    { n: 10, tipo: "fondo", titulo: "F", estado: "abierto", causa: "x", fondo: "" },
-    { n: 11, tipo: "encargo", estado: "abierto", fondo: "10" },
-    { n: 12, tipo: "encargo", estado: "cerrado", fondo: "10" },
-    { n: 13, tipo: "caso", estado: "cerrado", fondo: "10" },
-    { n: 14, tipo: "encargo", estado: "abierto", fondo: "99" },
-  ];
-  const r = porFondo(is, [{ issue: 12, minutos: 90, coste_usd: 3 }, { issue: 14, minutos: 60, coste_usd: 9 }]);
-  assert.equal(r.length, 1);
-  assert.deepEqual([r[0].encargos, r[0].encargos_abiertos, r[0].casos, r[0].medidos, r[0].horas, r[0].coste_usd], [2, 1, 1, 1, 1.5, 3]);
-});
-
 import { entidadesVista } from "./lib.mjs";
 const ents = {
   entidades: [
@@ -202,14 +174,14 @@ test("ningún otro módulo mete estilos: ni <style> ni style= fuera de estilo.mj
 });
 
 test("pagina: idioma, saltar al contenido, un h1, navegación agrupada y elemento activo con aria-current", () => {
-  const h = pagina("Fondos", "Proyecto <x>", "<p>hola</p>", "/fondos");
+  const h = pagina("Issues", "Proyecto <x>", "<p>hola</p>", "/issues");
   assert.match(h, /<html lang="es">/);
   assert.match(h, /<a class="salto" href="#contenido">Saltar al contenido<[/]a>/);
   assert.equal((h.match(/<h1>/g) ?? []).length, 1);
-  assert.ok(h.includes("<title>Fondos · Proyecto &lt;x&gt;</title>"));
+  assert.ok(h.includes("<title>Issues · Proyecto &lt;x&gt;</title>"));
   for (const g of ["Conocimiento", "Trabajo", "Mapa"]) assert.ok(h.includes(`>${g}<`), g);
   assert.equal((h.match(/aria-current="page">/g) ?? []).length, 1);
-  assert.match(h, /<a href="[/]fondos" aria-current="page">Fondos<[/]a>/);
+  assert.match(h, /<a href="[/]issues" aria-current="page">Issues<[/]a>/);
   assert.match(pagina("Ficha", "P", "", "/entidades/evento"), /<a href="[/]entidades" aria-current="page">/);
   assert.match(pagina("Inicio", "P", "", "/"), /class="marca" href="[/]" aria-current="page"/);
 });
