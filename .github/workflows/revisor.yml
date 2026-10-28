@@ -18,4 +18,9 @@ jobs:
     uses: factory-am89/fabrica/.github/workflows/revisor.yml@main
     with:
       revisor-app-slug: fabrica-revisor
-    secrets: inherit
+    # Solo los tres que el juez usa, por nombre y nunca la forma que lo hereda todo (entregaría a un workflow de otro repo todos
+    # los secretos de este). Como la plantilla de la Fábrica (apps/proyecto-nuevo/revisor.yml).
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      REVISOR_CLIENT_ID: ${{ secrets.REVISOR_CLIENT_ID }}
+      REVISOR_APP_KEY: ${{ secrets.REVISOR_APP_KEY }}
